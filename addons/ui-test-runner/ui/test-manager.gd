@@ -692,6 +692,17 @@ func _create_about_tab(tabs: TabContainer) -> void:
 		"When UI intentionally changes, click the rerecord button (↻) to capture new baseline screenshots. " +
 		"This runs the test and saves new reference images without failing on differences.")
 
+	_add_help_topic(help_vbox, "App Integration",
+		"Connect to these signals on the UITestRunner autoload to integrate with your app:\n\n" +
+		"• ui_test_runner_setup_environment() - Emitted at start of run. Use to go fullscreen, " +
+		"navigate to test board, or configure window size.\n\n" +
+		"• ui_test_runner_test_starting(test_name) - Emitted before each test. Use to clear " +
+		"the board, reset zoom, or prepare a clean state.\n\n" +
+		"• ui_test_runner_test_ended(test_name, passed) - Emitted after each test completes. " +
+		"Use for logging or per-test cleanup.\n\n" +
+		"• ui_test_runner_run_completed() - Emitted when all tests finish. Use to restore " +
+		"app state, exit fullscreen, or show summary.")
+
 	_add_help_topic(help_vbox, "Settings & Config",
 		"Your preferences (comparison mode, tolerance, playback speed) are saved to " +
 		"'user://ui-test-runner-config.cfg'. This file is created automatically when you " +

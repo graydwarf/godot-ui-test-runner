@@ -58,6 +58,7 @@ func begin_test(test_name: String) -> void:
 	is_running = true
 	_cancelled = false
 	_playback.is_running = true
+	_playback.is_cancelled = false
 	_playback.clear_action_log()
 	_virtual_cursor.visible = true
 	_virtual_cursor.show_cursor()
@@ -96,6 +97,7 @@ func cancel_test() -> void:
 	if is_running:
 		print("[TestExecutor] Test cancelled by user")
 		_cancelled = true
+		_playback.is_cancelled = true
 
 # ============================================================================
 # BREAKPOINT AND STEPPING CONTROLS

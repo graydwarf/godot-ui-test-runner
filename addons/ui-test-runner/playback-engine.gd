@@ -27,7 +27,12 @@ var _virtual_cursor: Node2D
 # State
 var current_speed: Speed = Speed.NORMAL
 var is_running: bool = false
+var is_cancelled: bool = false  # Set by executor to abort long-running operations
 var action_log: Array[Dictionary] = []
+
+# Minimum time between clicks to prevent OS double-click detection (ms)
+const MIN_CLICK_INTERVAL_MS = 350
+var _last_click_time: int = 0  # Time.get_ticks_msec() of last click
 
 # Initializes the playback engine with required references
 func initialize(tree: SceneTree, viewport: Viewport, virtual_cursor: Node2D) -> void:
@@ -103,6 +108,13 @@ func move_to(pos: Vector2, duration: float = 0.3) -> void:
 
 ## Click at current position with optional modifiers
 func click(ctrl: bool = false, shift: bool = false) -> void:
+	# Prevent clicks too close together from triggering OS double-click detection
+	var now = Time.get_ticks_msec()
+	var elapsed = now - _last_click_time
+	if elapsed < MIN_CLICK_INTERVAL_MS and _last_click_time > 0:
+		var wait_ms = MIN_CLICK_INTERVAL_MS - elapsed
+		await wait(wait_ms / 1000.0, true)
+
 	var pos = _virtual_cursor.global_position
 	_virtual_cursor.show_click()
 
@@ -155,6 +167,7 @@ func click(ctrl: bool = false, shift: bool = false) -> void:
 		_release_modifier_key(KEY_CTRL)
 	await _tree.process_frame
 
+	_last_click_time = Time.get_ticks_msec()
 	_log_action("click", {"position": pos, "ctrl": ctrl, "shift": shift})
 
 ## Click at specific position (move + click) with optional modifiers
@@ -203,6 +216,8 @@ func drag_to(to: Vector2, duration: float = 0.5, hold_at_end: float = 0.0) -> vo
 		var last_pos = from
 
 		for i in range(steps + 1):
+			if is_cancelled:
+				break
 			var t = float(i) / steps
 			var pos = from.lerp(to, t)
 			_virtual_cursor.global_position = pos
@@ -214,15 +229,15 @@ func drag_to(to: Vector2, duration: float = 0.5, hold_at_end: float = 0.0) -> vo
 
 	# Hold at end position with mouse still pressed (for hover navigation triggers)
 	# Note: hold_at_end is user-configured and NOT affected by speed setting
-	if hold_at_end > 0.0:
+	if hold_at_end > 0.0 and not is_cancelled:
 		var elapsed = 0.0
-		while elapsed < hold_at_end:
+		while elapsed < hold_at_end and not is_cancelled:
 			# Keep sending motion events to maintain drag state
 			_emit_motion(to, Vector2.ZERO, true)
 			await _tree.process_frame
 			elapsed += _tree.root.get_process_delta_time()
 
-	# Mouse up at end
+	# Mouse up at end (always release to avoid stuck mouse state)
 	Input.warp_mouse(to)
 	var up = InputEventMouseButton.new()
 	up.button_index = MOUSE_BUTTON_LEFT
@@ -283,6 +298,8 @@ func drag_segment(from: Vector2, to: Vector2, duration: float = 0.5) -> void:
 		var last_pos = from
 
 		for i in range(steps + 1):
+			if is_cancelled:
+				break
 			var t = float(i) / steps
 			var pos = from.lerp(to, t)
 			_virtual_cursor.global_position = pos
@@ -291,6 +308,11 @@ func drag_segment(from: Vector2, to: Vector2, duration: float = 0.5) -> void:
 			_emit_motion(pos, pos - last_pos, true)
 			last_pos = pos
 			await _tree.process_frame
+
+	# If cancelled, release mouse to avoid stuck state
+	if is_cancelled:
+		_release_mouse_button()
+		return
 
 	# NO mouse up - keep mouse pressed for next segment
 	await _tree.process_frame
@@ -317,6 +339,8 @@ func continue_drag_segment(to: Vector2, duration: float = 0.5) -> void:
 		var last_pos = from
 
 		for i in range(steps + 1):
+			if is_cancelled:
+				break
 			var t = float(i) / steps
 			var pos = from.lerp(to, t)
 			_virtual_cursor.global_position = pos
@@ -326,8 +350,24 @@ func continue_drag_segment(to: Vector2, duration: float = 0.5) -> void:
 			last_pos = pos
 			await _tree.process_frame
 
+	# If cancelled, release mouse to avoid stuck state
+	if is_cancelled:
+		_release_mouse_button()
+		return
+
 	await _tree.process_frame
 	_log_action("continue_drag_segment", {"from": from, "to": to})
+
+## Helper to release mouse button (used on cancellation)
+func _release_mouse_button() -> void:
+	var pos = _virtual_cursor.global_position
+	var up = InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	Input.parse_input_event(up)
+	_viewport.push_input(up)
 
 ## Complete a drag - release mouse at current position
 ## Used after drag_segment calls to finalize the drag operation

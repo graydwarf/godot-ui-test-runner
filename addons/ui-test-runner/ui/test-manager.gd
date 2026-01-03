@@ -670,6 +670,11 @@ func _create_about_tab(tabs: TabContainer) -> void:
 		"Click the play button (▶) next to any test to run it. Use 'Run All Tests' to execute " +
 		"the entire suite. Tests replay your recorded actions and compare screenshots to detect UI changes.")
 
+	_add_help_topic(help_vbox, "Click Timing",
+		"To prevent consecutive clicks from being interpreted as double-clicks by the OS, " +
+		"a minimum 350ms delay is automatically added between clicks during playback. " +
+		"This ensures single-click actions remain single-clicks even when recorded quickly.")
+
 	_add_help_topic(help_vbox, "Debug Mode",
 		"Click the debug button (>|) to step through a test one action at a time. " +
 		"This shows position information and helps diagnose failures. Press P to pause/resume, " +

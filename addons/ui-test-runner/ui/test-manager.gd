@@ -205,11 +205,13 @@ func _create_tabs(vbox: VBoxContainer) -> void:
 	_create_tests_tab(tabs)
 	_create_results_tab(tabs)
 	_create_settings_tab(tabs)
+	_create_about_tab(tabs)
 
 	# Rename tabs with padding for equal width
 	tabs.set_tab_title(0, "   Tests   ")
 	tabs.set_tab_title(1, "  Results  ")
 	tabs.set_tab_title(2, "  Settings  ")
+	tabs.set_tab_title(3, "   About   ")
 
 func _create_tests_tab(tabs: TabContainer) -> void:
 	var tests_tab = VBoxContainer.new()
@@ -549,6 +551,174 @@ func _create_settings_tab(tabs: TabContainer) -> void:
 	color_reset.custom_minimum_size = Vector2(28, 24)
 	color_reset.pressed.connect(_on_color_threshold_reset)
 	color_row.add_child(color_reset)
+
+
+func _create_about_tab(tabs: TabContainer) -> void:
+	var about_tab = VBoxContainer.new()
+	about_tab.name = "About"
+	about_tab.add_theme_constant_override("separation", 12)
+	tabs.add_child(about_tab)
+
+	# === HEADER SECTION ===
+	var header_section = PanelContainer.new()
+	var header_style = StyleBoxFlat.new()
+	header_style.bg_color = Color(0.12, 0.15, 0.2, 0.8)
+	header_style.border_color = Color(0.3, 0.5, 0.8, 0.6)
+	header_style.set_border_width_all(1)
+	header_style.set_corner_radius_all(8)
+	header_style.set_content_margin_all(16)
+	header_section.add_theme_stylebox_override("panel", header_style)
+	about_tab.add_child(header_section)
+
+	var header_vbox = VBoxContainer.new()
+	header_vbox.add_theme_constant_override("separation", 8)
+	header_section.add_child(header_vbox)
+
+	# Title
+	var title = Label.new()
+	title.text = "UI Test Runner"
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(0.4, 0.75, 1.0))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header_vbox.add_child(title)
+
+	# Subtitle
+	var subtitle = Label.new()
+	subtitle.text = "Visual UI Automation Testing for Godot"
+	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8))
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header_vbox.add_child(subtitle)
+
+	# Separator
+	var sep = HSeparator.new()
+	sep.add_theme_constant_override("separation", 8)
+	header_vbox.add_child(sep)
+
+	# License
+	var license_label = Label.new()
+	license_label.text = "MIT License - Copyright (c) 2025 Poplava"
+	license_label.add_theme_font_size_override("font_size", 12)
+	license_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+	license_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header_vbox.add_child(license_label)
+
+	# Links row
+	var links_row = HBoxContainer.new()
+	links_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	links_row.add_theme_constant_override("separation", 20)
+	header_vbox.add_child(links_row)
+
+	var discord_btn = _create_link_button("Discord", "https://discord.gg/9GnrTKXGfq")
+	links_row.add_child(discord_btn)
+
+	var github_btn = _create_link_button("GitHub", "https://github.com/graydwarf/godot-ui-test-runner")
+	links_row.add_child(github_btn)
+
+	var itch_btn = _create_link_button("More Tools", "https://poplava.itch.io")
+	links_row.add_child(itch_btn)
+
+	# === HELP TOPICS SECTION ===
+	var help_section = PanelContainer.new()
+	help_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var help_style = StyleBoxFlat.new()
+	help_style.bg_color = Color(0.08, 0.08, 0.1, 0.4)
+	help_style.border_color = Color(0.35, 0.35, 0.4, 0.8)
+	help_style.set_border_width_all(1)
+	help_style.set_corner_radius_all(6)
+	help_style.set_content_margin_all(12)
+	help_section.add_theme_stylebox_override("panel", help_style)
+	about_tab.add_child(help_section)
+
+	var help_scroll = ScrollContainer.new()
+	help_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	help_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	help_section.add_child(help_scroll)
+
+	var help_vbox = VBoxContainer.new()
+	help_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	help_vbox.add_theme_constant_override("separation", 16)
+	help_scroll.add_child(help_vbox)
+
+	# Help topics
+	_add_help_topic(help_vbox, "Recording Tests",
+		"Press F11 or click 'Record New Test' to start recording. Interact with your UI normally - " +
+		"clicks, drags, and text input are captured. Press F10 to take screenshots at key moments. " +
+		"Press ESC or F11 again to stop recording.")
+
+	_add_help_topic(help_vbox, "Adding Delays",
+		"Use the wait dropdown in the Event Editor to adjust delays for each step. " +
+		"Click 'Insert Wait' to add a dedicated wait step at any point in the test sequence.")
+
+	_add_help_topic(help_vbox, "Terminate Drag",
+		"Press T during recording to terminate a drag segment. This is useful for complex drag " +
+		"operations that should be split into multiple segments, or when you need precise control " +
+		"over where drag operations end.")
+
+	_add_help_topic(help_vbox, "Running Tests",
+		"Click the play button (▶) next to any test to run it. Use 'Run All Tests' to execute " +
+		"the entire suite. Tests replay your recorded actions and compare screenshots to detect UI changes.")
+
+	_add_help_topic(help_vbox, "Debug Mode",
+		"Click the debug button (>|) to step through a test one action at a time. " +
+		"This shows position information and helps diagnose failures. Press P to pause/resume, " +
+		"Space to step forward, or R to restart the test.")
+
+	_add_help_topic(help_vbox, "Categories",
+		"Organize tests into categories using '+ New Category'. Drag tests between categories " +
+		"using the handle (≡). Click category headers to collapse/expand. Run all tests in a category with its play button.")
+
+	_add_help_topic(help_vbox, "Screenshot Comparison",
+		"Tests validate UI by comparing screenshots. Use 'Pixel Perfect' mode for exact matches, " +
+		"or 'Tolerant' mode to allow minor differences. Adjust tolerance in Settings if tests fail due to anti-aliasing or fonts.")
+
+	_add_help_topic(help_vbox, "Updating Baselines",
+		"When UI intentionally changes, click the rerecord button (↻) to capture new baseline screenshots. " +
+		"This runs the test and saves new reference images without failing on differences.")
+
+	_add_help_topic(help_vbox, "Keyboard Shortcuts",
+		"F12: Toggle Test Manager\n" +
+		"F11: Start/Stop Recording\n" +
+		"F10: Capture screenshot (during recording)\n" +
+		"T: Terminate drag segment (during recording)\n" +
+		"P: Pause/Resume test playback\n" +
+		"Space: Step forward (when paused)\n" +
+		"R: Restart current test\n" +
+		"ESC: Cancel recording / Close dialogs / Stop test")
+
+	_add_help_topic(help_vbox, "Settings & Config",
+		"Your preferences (comparison mode, tolerance, playback speed) are saved to " +
+		"'user://ui-test-runner-config.cfg'. This file is created automatically when you " +
+		"change settings. Tests are stored in 'res://tests/ui-tests/' within your project.")
+
+func _create_link_button(text: String, url: String) -> Button:
+	var btn = Button.new()
+	btn.text = text
+	btn.flat = true
+	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0))
+	btn.add_theme_color_override("font_hover_color", Color(0.7, 0.85, 1.0))
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn.pressed.connect(func(): OS.shell_open(url))
+	return btn
+
+func _add_help_topic(container: VBoxContainer, topic_title: String, topic_text: String) -> void:
+	var topic_vbox = VBoxContainer.new()
+	topic_vbox.add_theme_constant_override("separation", 4)
+	container.add_child(topic_vbox)
+
+	var title_label = Label.new()
+	title_label.text = topic_title
+	title_label.add_theme_font_size_override("font_size", 15)
+	title_label.add_theme_color_override("font_color", Color(0.5, 0.8, 0.95))
+	topic_vbox.add_child(title_label)
+
+	var text_label = Label.new()
+	text_label.text = topic_text
+	text_label.add_theme_font_size_override("font_size", 13)
+	text_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+	text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	topic_vbox.add_child(text_label)
 
 func refresh_test_list() -> void:
 	if not _panel:

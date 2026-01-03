@@ -77,7 +77,7 @@ static func load_config() -> void:
 	var full_path = ProjectSettings.globalize_path(CONFIG_PATH)
 	var err = config.load(CONFIG_PATH)
 	if err != OK:
-		print("[UITestRunner] No config file at %s, using defaults" % full_path)
+		# No config file yet - using defaults (config saved on first settings change)
 		return
 
 	compare_mode = config.get_value("comparison", "mode", CompareMode.TOLERANT)

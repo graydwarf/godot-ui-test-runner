@@ -42,7 +42,7 @@ func initialize(tree: SceneTree, viewport: Viewport, virtual_cursor: Node2D) -> 
 func set_speed(speed: Speed) -> void:
 	current_speed = speed
 	var speed_name = Speed.keys()[speed]
-	print("[UIPlaybackEngine] Speed set to: ", speed_name)
+	# Speed changed silently - no console output
 
 func cycle_speed() -> void:
 	var next = (current_speed + 1) % Speed.size()

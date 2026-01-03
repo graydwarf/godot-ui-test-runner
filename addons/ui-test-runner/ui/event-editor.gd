@@ -13,6 +13,7 @@ extends RefCounted
 ## Post-recording event editor for UI Test Runner
 
 const Utils = preload("res://addons/ui-test-runner/utils.gd")
+const DELAY_OPTIONS = [0, 50, 100, 250, 500, 1000, 1500, 2000, 3000, 5000]
 
 signal cancelled()
 signal save_requested(test_name: String)
@@ -434,11 +435,10 @@ func _create_event_row(index: int, event: Dictionary) -> Control:
 	var delay_dropdown = OptionButton.new()
 	delay_dropdown.name = "DelayDropdown"
 	delay_dropdown.custom_minimum_size.x = 90
-	var delays = [0, 50, 100, 250, 500, 1000, 1500, 2000, 3000, 5000]
 	var current_delay = event.get("wait_after", 100)
 	var selected_idx = 0
-	for j in range(delays.size()):
-		var d = delays[j]
+	for j in range(DELAY_OPTIONS.size()):
+		var d = DELAY_OPTIONS[j]
 		if d < 1000:
 			delay_dropdown.add_item("%dms" % d, d)
 		else:
@@ -519,11 +519,7 @@ func _get_event_description(event: Dictionary) -> String:
 			return "Unknown event"
 
 func _on_delay_changed(dropdown_index: int, event_index: int) -> void:
-	var event_list = _editor.get_node("VBox/EventScroll/EventList")
-	# Find the container (containers are at even indices, insert buttons at odd)
-	var container = event_list.get_child(event_index * 2)
-	var dropdown = container.get_node("Panel/InnerRow/DelayDropdown")
-	var delay_value = dropdown.get_item_id(dropdown_index)
+	var delay_value = DELAY_OPTIONS[dropdown_index]
 	recorded_events[event_index]["wait_after"] = delay_value
 
 func _on_note_changed(new_text: String, event_index: int) -> void:

@@ -2,6 +2,8 @@
 
 A visual UI automation testing framework for Godot 4.x that enables recording, playback, and validation of user interface interactions.
 
+![Test Manager](docs/test-manager-tests.png)
+
 ## Features
 
 - **Record & Replay**: Record mouse clicks, drags, double-clicks, and keyboard input with visual cursor feedback
@@ -40,8 +42,16 @@ A visual UI automation testing framework for Godot 4.x that enables recording, p
 3. Press **F10** to capture screenshot checkpoints at important moments
 4. Press **T** to terminate a drag segment (useful for complex drag operations)
 5. Press **F11** to stop recording
-6. Edit test name and step delays in the Event Editor
+6. Edit test name and step delays in the Step Editor
 7. Click **Save Test**
+
+![Recording UI](docs/record-ui.png)
+
+#### Step Editor
+
+After recording, use the Step Editor to fine-tune your test:
+
+![Step Editor](docs/test-step-editor-ui.png)
 
 ### Adding Delays
 
@@ -64,6 +74,8 @@ Press **T** during recording to terminate a drag segment. This is useful when:
 4. View results in the Results tab
 5. Click the rerun button (↻) to rerun individual tests from results
 
+![Test Results](docs/test-manager-results.png)
+
 ### Test Organization
 
 - Create categories to group related tests
@@ -73,6 +85,8 @@ Press **T** during recording to terminate a drag segment. This is useful when:
 ## Configuration
 
 In the Test Manager's Settings tab:
+
+![Settings](docs/test-manager-settings.png)
 
 - **Playback Speed**: Instant, Fast, Normal, Slow, or Step (manual)
 - **Comparison Mode**: Pixel Perfect or Tolerant
@@ -91,6 +105,12 @@ Tests are stored in `res://tests/ui-tests/`:
 
 - Godot 4.5+
 - Windows (currently tested on Windows only)
+
+## Help
+
+The Test Manager includes a built-in Help tab with detailed documentation:
+
+![Help](docs/test-manager-help.png)
 
 ## Support & Community
 

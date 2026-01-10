@@ -84,12 +84,15 @@ var _test_editor_hud_step_btn: Button
 var _test_editor_hud_restart_btn: Button
 var _test_editor_hud_rerecord_btn: Button
 var _test_editor_hud_panel: Panel  # Panel for border color changes
-var _test_editor_hud_steps_btn: Button  # Toggle steps list visibility
-var _test_editor_hud_steps_container: VBoxContainer  # Collapsible steps section
+var _test_editor_hud_details_btn: Button  # Toggle body visibility (renamed from steps_btn)
+var _test_editor_hud_visibility_btn: Button  # Toggle HUD visibility during playback
+var _test_editor_hud_body_container: VBoxContainer  # Collapsible body section
 var _test_editor_hud_steps_scroll: ScrollContainer  # Scrollable step list
 var _test_editor_hud_steps_list: VBoxContainer  # Container for step rows
 var _test_editor_hud_step_rows: Array[Control] = []  # References to step row controls
 var _test_editor_hud_current_events: Array[Dictionary] = []  # Current test events for editing
+var _test_editor_hud_collapsed: bool = true  # Body collapsed state (default collapsed)
+var _test_editor_hud_hidden_during_playback: bool = false  # Hide HUD during playback
 var _auto_play_steps: Dictionary = {}  # Step indices that should auto-play (skip pause)
 var _failed_step_index: int = -1  # Step that failed during step debugging (-1 = none)
 var _passed_step_indices: Array[int] = []  # Steps that passed during test execution
@@ -362,6 +365,9 @@ func _on_executor_test_completed(test_name: String, passed: bool):
 	# - On failure: red highlight on failed step
 	# - On success: nothing happens (HUD stays, user can restart or ESC)
 	if _executor and _executor.step_mode:
+		# Show HUD if it was hidden during playback (test finished)
+		if _test_editor_hud_hidden_during_playback and _test_editor_hud:
+			_test_editor_hud.visible = true
 		test_completed.emit(test_name, passed)
 		return
 
@@ -2347,8 +2353,8 @@ func _setup_test_editor_hud():
 	panel.anchor_top = 1.0
 	panel.anchor_right = 1.0
 	panel.anchor_bottom = 1.0
-	panel.offset_left = -602  # Min width ~592px
-	panel.offset_top = -140
+	panel.offset_left = -436  # Narrower for collapsed state (+16px from original)
+	panel.offset_top = -70  # Start collapsed
 	panel.offset_right = -10
 	panel.offset_bottom = -10
 	_test_editor_hud_panel = panel  # Store reference for border color changes
@@ -2366,10 +2372,10 @@ func _setup_test_editor_hud():
 	# Main VBox with margins
 	var margin = MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 12)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
 	panel.add_child(margin)
 
 	var vbox = VBoxContainer.new()
@@ -2377,47 +2383,105 @@ func _setup_test_editor_hud():
 	vbox.mouse_filter = Control.MOUSE_FILTER_STOP
 	margin.add_child(vbox)
 
-	# Header row with title
+	# === HEADER ROW === (always visible, contains controls)
 	var header = HBoxContainer.new()
-	header.add_theme_constant_override("separation", 10)
+	header.add_theme_constant_override("separation", 8)
 	vbox.add_child(header)
 
-	_test_editor_hud_title_edit = LineEdit.new()
-	_test_editor_hud_title_edit.name = "TitleEdit"
-	_test_editor_hud_title_edit.text = "New Test"
-	_test_editor_hud_title_edit.add_theme_font_size_override("font_size", 18)
-	_test_editor_hud_title_edit.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
-	_test_editor_hud_title_edit.add_theme_color_override("caret_color", Color(0.9, 0.9, 0.95))
-	_test_editor_hud_title_edit.flat = true
-	_test_editor_hud_title_edit.expand_to_text_length = true
-	_test_editor_hud_title_edit.custom_minimum_size.x = 150
-	_test_editor_hud_title_edit.text_submitted.connect(_on_test_name_submitted)
-	_test_editor_hud_title_edit.focus_exited.connect(_on_test_name_focus_exited)
-	header.add_child(_test_editor_hud_title_edit)
+	# Load icons
+	var icon_next_frame = load("res://addons/godot-ui-automation/icons/next-frame.svg")
+	var icon_play = load("res://addons/godot-ui-automation/icons/play.svg")
+	var icon_replay = load("res://addons/godot-ui-automation/icons/replay.svg")
+	var icon_record = load("res://addons/godot-ui-automation/icons/record.svg")
+	var icon_eye = load("res://addons/godot-ui-automation/icons/eye.svg")
 
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(spacer)
+	# Step button (only enabled when paused)
+	_test_editor_hud_step_btn = Button.new()
+	_test_editor_hud_step_btn.icon = icon_next_frame
+	_test_editor_hud_step_btn.tooltip_text = "Step Forward (Space)"
+	_test_editor_hud_step_btn.custom_minimum_size = Vector2(40, 40)
+	_test_editor_hud_step_btn.expand_icon = true
+	_test_editor_hud_step_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_test_editor_hud_step_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_step_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_step_btn.pressed.connect(_on_test_editor_hud_step)
+	_test_editor_hud_step_btn.disabled = true
+	header.add_child(_test_editor_hud_step_btn)
 
-	# Pass indicator (checkmark) - shown when test passes in step mode
+	# Play button (starts test running through all steps)
+	_test_editor_hud_pause_continue_btn = Button.new()
+	_test_editor_hud_pause_continue_btn.icon = icon_play
+	_test_editor_hud_pause_continue_btn.tooltip_text = "Play to End (P)"
+	_test_editor_hud_pause_continue_btn.custom_minimum_size = Vector2(40, 40)
+	_test_editor_hud_pause_continue_btn.expand_icon = true
+	_test_editor_hud_pause_continue_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_test_editor_hud_pause_continue_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_pause_continue_btn.disabled = true  # Start disabled to prevent accidental clicks
+	_test_editor_hud_pause_continue_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_pause_continue_btn.pressed.connect(_on_test_editor_hud_play)
+	header.add_child(_test_editor_hud_pause_continue_btn)
 
-	# Step counter in header
-	_test_editor_hud_step_label = Label.new()
-	_test_editor_hud_step_label.text = "Step: 0/0"
-	_test_editor_hud_step_label.add_theme_font_size_override("font_size", 14)
-	_test_editor_hud_step_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
-	header.add_child(_test_editor_hud_step_label)
+	# Reset button
+	_test_editor_hud_restart_btn = Button.new()
+	_test_editor_hud_restart_btn.icon = icon_replay
+	_test_editor_hud_restart_btn.tooltip_text = "Reset Test (R)"
+	_test_editor_hud_restart_btn.custom_minimum_size = Vector2(40, 40)
+	_test_editor_hud_restart_btn.expand_icon = true
+	_test_editor_hud_restart_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_test_editor_hud_restart_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_restart_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_restart_btn.pressed.connect(_on_test_editor_hud_restart)
+	header.add_child(_test_editor_hud_restart_btn)
+
+	# Re-record button
+	_test_editor_hud_rerecord_btn = Button.new()
+	_test_editor_hud_rerecord_btn.icon = icon_record
+	_test_editor_hud_rerecord_btn.tooltip_text = "Re-record Test"
+	_test_editor_hud_rerecord_btn.custom_minimum_size = Vector2(40, 40)
+	_test_editor_hud_rerecord_btn.expand_icon = true
+	_test_editor_hud_rerecord_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_test_editor_hud_rerecord_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_rerecord_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_rerecord_btn.pressed.connect(_on_test_editor_hud_rerecord)
+	header.add_child(_test_editor_hud_rerecord_btn)
+
+	# Visibility toggle button (hide HUD during playback)
+	_test_editor_hud_visibility_btn = Button.new()
+	_test_editor_hud_visibility_btn.icon = icon_eye
+	_test_editor_hud_visibility_btn.tooltip_text = "Hide UI during playback"
+	_test_editor_hud_visibility_btn.custom_minimum_size = Vector2(40, 40)
+	_test_editor_hud_visibility_btn.expand_icon = true
+	_test_editor_hud_visibility_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_test_editor_hud_visibility_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_visibility_btn.toggle_mode = true
+	_test_editor_hud_visibility_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_visibility_btn.toggled.connect(_on_test_editor_hud_visibility_toggled)
+	header.add_child(_test_editor_hud_visibility_btn)
+
+	var header_spacer = Control.new()
+	header_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(header_spacer)
+
+	# Details toggle button
+	_test_editor_hud_details_btn = Button.new()
+	_test_editor_hud_details_btn.text = "▶ Details"
+	_test_editor_hud_details_btn.tooltip_text = "Show/hide test details"
+	_test_editor_hud_details_btn.custom_minimum_size = Vector2(90, 36)
+	_test_editor_hud_details_btn.focus_mode = Control.FOCUS_NONE
+	_test_editor_hud_details_btn.button_down.connect(_on_hud_button_down)
+	_test_editor_hud_details_btn.pressed.connect(_on_test_editor_hud_toggle_details)
+	header.add_child(_test_editor_hud_details_btn)
 
 	# Spacer before close button
 	var close_spacer = Control.new()
-	close_spacer.custom_minimum_size.x = 16
+	close_spacer.custom_minimum_size.x = 8
 	header.add_child(close_spacer)
 
 	# Close button (X)
 	_test_editor_hud_close_btn = Button.new()
 	_test_editor_hud_close_btn.icon = load("res://addons/godot-ui-automation/icons/dismiss_circle.svg")
 	_test_editor_hud_close_btn.tooltip_text = "Close (Esc)"
-	_test_editor_hud_close_btn.custom_minimum_size = Vector2(48, 48)
+	_test_editor_hud_close_btn.custom_minimum_size = Vector2(40, 40)
 	_test_editor_hud_close_btn.expand_icon = true
 	_test_editor_hud_close_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_test_editor_hud_close_btn.focus_mode = Control.FOCUS_NONE
@@ -2425,10 +2489,40 @@ func _setup_test_editor_hud():
 	_test_editor_hud_close_btn.pressed.connect(_on_test_editor_hud_close)
 	header.add_child(_test_editor_hud_close_btn)
 
-	# Header separator
-	var header_sep = HSeparator.new()
-	header_sep.add_theme_stylebox_override("separator", _create_separator_style())
-	vbox.add_child(header_sep)
+	# === BODY CONTAINER === (collapsible, hidden by default)
+	_test_editor_hud_body_container = VBoxContainer.new()
+	_test_editor_hud_body_container.visible = false  # Start collapsed
+	_test_editor_hud_body_container.add_theme_constant_override("separation", 8)
+	_test_editor_hud_body_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	vbox.add_child(_test_editor_hud_body_container)
+
+	# Body separator
+	var body_sep = HSeparator.new()
+	body_sep.add_theme_stylebox_override("separator", _create_separator_style())
+	_test_editor_hud_body_container.add_child(body_sep)
+
+	# Title row (Test Name label + editable field)
+	var title_row = HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	_test_editor_hud_body_container.add_child(title_row)
+
+	var title_label = Label.new()
+	title_label.text = "Test:"
+	title_label.add_theme_font_size_override("font_size", 14)
+	title_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	title_row.add_child(title_label)
+
+	_test_editor_hud_title_edit = LineEdit.new()
+	_test_editor_hud_title_edit.name = "TitleEdit"
+	_test_editor_hud_title_edit.text = "New Test"
+	_test_editor_hud_title_edit.add_theme_font_size_override("font_size", 16)
+	_test_editor_hud_title_edit.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
+	_test_editor_hud_title_edit.add_theme_color_override("caret_color", Color(0.9, 0.9, 0.95))
+	_test_editor_hud_title_edit.flat = true
+	_test_editor_hud_title_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_test_editor_hud_title_edit.text_submitted.connect(_on_test_name_submitted)
+	_test_editor_hud_title_edit.focus_exited.connect(_on_test_name_focus_exited)
+	title_row.add_child(_test_editor_hud_title_edit)
 
 	# Environment mismatch warning (yellow banner, hidden by default)
 	_test_editor_hud_env_warning = PanelContainer.new()
@@ -2447,105 +2541,29 @@ func _setup_test_editor_hud():
 	warning_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))
 	warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_test_editor_hud_env_warning.add_child(warning_label)
-	vbox.add_child(_test_editor_hud_env_warning)
+	_test_editor_hud_body_container.add_child(_test_editor_hud_env_warning)
+
+	# Step counter
+	_test_editor_hud_step_label = Label.new()
+	_test_editor_hud_step_label.text = "Step: 0/0"
+	_test_editor_hud_step_label.add_theme_font_size_override("font_size", 14)
+	_test_editor_hud_step_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	_test_editor_hud_body_container.add_child(_test_editor_hud_step_label)
 
 	# Current event description
 	_test_editor_hud_event_label = Label.new()
 	_test_editor_hud_event_label.text = "Ready..."
 	_test_editor_hud_event_label.add_theme_font_size_override("font_size", 13)
 	_test_editor_hud_event_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
-	vbox.add_child(_test_editor_hud_event_label)
-
-	# Button row - icon buttons like recording dialog
-	var btn_row = HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 12)
-	vbox.add_child(btn_row)
-
-	# Load icons
-	var icon_next_frame = load("res://addons/godot-ui-automation/icons/next-frame.svg")
-	var icon_pause = load("res://addons/godot-ui-automation/icons/pause.svg")
-	var icon_play = load("res://addons/godot-ui-automation/icons/play.svg")
-	var icon_replay = load("res://addons/godot-ui-automation/icons/replay.svg")
-
-	# Step button (only enabled when paused)
-	_test_editor_hud_step_btn = Button.new()
-	_test_editor_hud_step_btn.icon = icon_next_frame
-	_test_editor_hud_step_btn.tooltip_text = "Step Forward (Space)"
-	_test_editor_hud_step_btn.custom_minimum_size = Vector2(45, 45)
-	_test_editor_hud_step_btn.expand_icon = true
-	_test_editor_hud_step_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_test_editor_hud_step_btn.focus_mode = Control.FOCUS_NONE
-	_test_editor_hud_step_btn.button_down.connect(_on_hud_button_down)
-	_test_editor_hud_step_btn.pressed.connect(_on_test_editor_hud_step)
-	_test_editor_hud_step_btn.disabled = true
-	btn_row.add_child(_test_editor_hud_step_btn)
-
-	# Play button (starts test running through all steps)
-	_test_editor_hud_pause_continue_btn = Button.new()
-	_test_editor_hud_pause_continue_btn.icon = load("res://addons/godot-ui-automation/icons/play.svg")
-	_test_editor_hud_pause_continue_btn.tooltip_text = "Play to End (P)"
-	_test_editor_hud_pause_continue_btn.custom_minimum_size = Vector2(45, 45)
-	_test_editor_hud_pause_continue_btn.expand_icon = true
-	_test_editor_hud_pause_continue_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_test_editor_hud_pause_continue_btn.focus_mode = Control.FOCUS_NONE
-	_test_editor_hud_pause_continue_btn.disabled = true  # Start disabled to prevent accidental clicks
-	_test_editor_hud_pause_continue_btn.button_down.connect(_on_hud_button_down)
-	_test_editor_hud_pause_continue_btn.pressed.connect(_on_test_editor_hud_play)
-	btn_row.add_child(_test_editor_hud_pause_continue_btn)
-
-	# Reset button
-	_test_editor_hud_restart_btn = Button.new()
-	_test_editor_hud_restart_btn.icon = icon_replay
-	_test_editor_hud_restart_btn.tooltip_text = "Reset Test (R)"
-	_test_editor_hud_restart_btn.custom_minimum_size = Vector2(45, 45)
-	_test_editor_hud_restart_btn.expand_icon = true
-	_test_editor_hud_restart_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_test_editor_hud_restart_btn.focus_mode = Control.FOCUS_NONE
-	_test_editor_hud_restart_btn.button_down.connect(_on_hud_button_down)
-	_test_editor_hud_restart_btn.pressed.connect(_on_test_editor_hud_restart)
-	btn_row.add_child(_test_editor_hud_restart_btn)
-
-	# Re-record button
-	var icon_record = load("res://addons/godot-ui-automation/icons/record.svg")
-	_test_editor_hud_rerecord_btn = Button.new()
-	_test_editor_hud_rerecord_btn.icon = icon_record
-	_test_editor_hud_rerecord_btn.tooltip_text = "Re-record Test"
-	_test_editor_hud_rerecord_btn.custom_minimum_size = Vector2(45, 45)
-	_test_editor_hud_rerecord_btn.expand_icon = true
-	_test_editor_hud_rerecord_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_test_editor_hud_rerecord_btn.focus_mode = Control.FOCUS_NONE
-	_test_editor_hud_rerecord_btn.button_down.connect(_on_hud_button_down)
-	_test_editor_hud_rerecord_btn.pressed.connect(_on_test_editor_hud_rerecord)
-	btn_row.add_child(_test_editor_hud_rerecord_btn)
-
-	var btn_spacer = Control.new()
-	btn_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn_row.add_child(btn_spacer)
-
-	# Steps toggle button (keeps text)
-	_test_editor_hud_steps_btn = Button.new()
-	_test_editor_hud_steps_btn.text = "▼ Steps"
-	_test_editor_hud_steps_btn.tooltip_text = "Show/hide test steps"
-	_test_editor_hud_steps_btn.custom_minimum_size = Vector2(90, 36)
-	_test_editor_hud_steps_btn.focus_mode = Control.FOCUS_NONE
-	_test_editor_hud_steps_btn.button_down.connect(_on_hud_button_down)
-	_test_editor_hud_steps_btn.pressed.connect(_on_test_editor_hud_toggle_steps)
-	btn_row.add_child(_test_editor_hud_steps_btn)
-
-	# Collapsible steps container (starts VISIBLE - expanded by default)
-	_test_editor_hud_steps_container = VBoxContainer.new()
-	_test_editor_hud_steps_container.visible = true
-	_test_editor_hud_steps_container.add_theme_constant_override("separation", 4)
-	_test_editor_hud_steps_container.mouse_filter = Control.MOUSE_FILTER_STOP
-	vbox.add_child(_test_editor_hud_steps_container)
+	_test_editor_hud_body_container.add_child(_test_editor_hud_event_label)
 
 	# Scrollable step list
 	_test_editor_hud_steps_scroll = ScrollContainer.new()
-	_test_editor_hud_steps_scroll.custom_minimum_size.y = 450
+	_test_editor_hud_steps_scroll.custom_minimum_size.y = 350
 	_test_editor_hud_steps_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_test_editor_hud_steps_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_test_editor_hud_steps_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	_test_editor_hud_steps_container.add_child(_test_editor_hud_steps_scroll)
+	_test_editor_hud_body_container.add_child(_test_editor_hud_steps_scroll)
 
 	# Margin container to add space between steps and scroll bar
 	var steps_margin = MarginContainer.new()
@@ -2561,6 +2579,9 @@ func _setup_test_editor_hud():
 func _show_test_editor_hud():
 	if _test_editor_hud:
 		_test_editor_hud.visible = true
+
+		# NOTE: Do NOT reset collapsed state or visibility toggle - they should persist across test restarts
+
 		# Update title with current test name
 		if _test_editor_hud_title_edit:
 			var display_name = pending_test_name
@@ -2572,12 +2593,15 @@ func _show_test_editor_hud():
 			if display_name.is_empty():
 				display_name = "New Test"
 			_test_editor_hud_title_edit.text = display_name
+
 		# Buttons will be enabled when paused_changed(true) signal arrives from executor
-		# Populate steps if we have events
-		if _test_editor_hud_current_events.size() > 0:
+		# Pre-populate steps so they're ready when user expands
+		if _test_editor_hud_current_events.size() > 0 and _test_editor_hud_step_rows.is_empty():
 			_populate_test_editor_hud_steps()
+
 		# Check environment and show warning if mismatched
 		_update_test_editor_env_warning()
+
 		# Ensure panel is properly sized
 		_update_test_editor_hud_panel_height()
 
@@ -2603,6 +2627,9 @@ func _update_test_editor_hud_pause_state(paused: bool):
 		# Paused: Play button enabled, Step button enabled
 		_test_editor_hud_pause_continue_btn.disabled = false
 		_test_editor_hud_step_btn.disabled = false
+		# Show HUD when paused (step completed) if it was hidden during playback
+		if _test_editor_hud_hidden_during_playback:
+			_test_editor_hud.visible = true
 	else:
 		# Running: Play button disabled (grayed out), Step button disabled
 		_test_editor_hud_pause_continue_btn.disabled = true
@@ -2701,20 +2728,20 @@ func _move_cursor_to_play_button() -> void:
 	if virtual_cursor:
 		virtual_cursor.visible = false
 
-func _on_test_editor_hud_toggle_steps():
-	if not _test_editor_hud_steps_container or not _test_editor_hud_steps_btn:
+func _on_test_editor_hud_toggle_details():
+	if not _test_editor_hud_body_container or not _test_editor_hud_details_btn:
 		return
 
-	var is_visible = _test_editor_hud_steps_container.visible
-	_test_editor_hud_steps_container.visible = not is_visible
-	_test_editor_hud_steps_btn.text = "▼ Steps" if not is_visible else "▶ Steps"
+	_test_editor_hud_collapsed = not _test_editor_hud_collapsed
+	_test_editor_hud_body_container.visible = not _test_editor_hud_collapsed
+	_test_editor_hud_details_btn.text = "▼ Details" if not _test_editor_hud_collapsed else "▶ Details"
 
-	# Populate steps only if not already populated
-	if not is_visible and _test_editor_hud_current_events.size() > 0 and _test_editor_hud_step_rows.is_empty():
+	# Populate steps only if not already populated (when expanding)
+	if not _test_editor_hud_collapsed and _test_editor_hud_current_events.size() > 0 and _test_editor_hud_step_rows.is_empty():
 		_populate_test_editor_hud_steps()
 
 	# Re-apply highlighting when expanding (preserve pass/fail state)
-	if not is_visible and not _test_editor_hud_step_rows.is_empty():
+	if not _test_editor_hud_collapsed and not _test_editor_hud_step_rows.is_empty():
 		if _step_mode_test_passed:
 			_mark_all_steps_passed()
 		elif _failed_step_index >= 0:
@@ -2722,7 +2749,7 @@ func _on_test_editor_hud_toggle_steps():
 		else:
 			_highlight_test_editor_hud_step(_executor.current_step if _executor and _executor.is_running else -1)
 
-	# Adjust panel height based on visibility
+	# Adjust panel height and width based on visibility
 	_update_test_editor_hud_panel_height()
 	_restore_hud_focus()
 
@@ -2731,10 +2758,14 @@ func _update_test_editor_hud_panel_height():
 	if not panel:
 		return
 
-	var base_height = 176  # Header + event label + buttons
-	if _test_editor_hud_steps_container and _test_editor_hud_steps_container.visible:
-		base_height += 480  # Steps scroll area
-	panel.offset_top = -base_height
+	if _test_editor_hud_collapsed:
+		# Collapsed: header only
+		panel.offset_top = -70
+		panel.offset_left = -436
+	else:
+		# Expanded: header + body with steps
+		panel.offset_top = -580
+		panel.offset_left = -618
 
 const PLAYBACK_DELAY_OPTIONS = [0, 50, 100, 250, 350, 500, 1000, 1500, 2000, 3000, 5000]
 
@@ -3383,9 +3414,14 @@ func _handle_hud_button_click(pos: Vector2) -> bool:
 				_executor.restart_from_beginning()
 				_highlight_test_editor_hud_step(0)
 			handled = true
-	elif _test_editor_hud_steps_btn and _test_editor_hud_steps_btn.visible:
-		if _test_editor_hud_steps_btn.get_global_rect().has_point(pos):
-			_on_test_editor_hud_toggle_steps_internal()
+	elif _test_editor_hud_visibility_btn and _test_editor_hud_visibility_btn.visible:
+		if _test_editor_hud_visibility_btn.get_global_rect().has_point(pos):
+			# Toggle the button state manually (it's a toggle button)
+			_test_editor_hud_visibility_btn.button_pressed = not _test_editor_hud_visibility_btn.button_pressed
+			handled = true
+	elif _test_editor_hud_details_btn and _test_editor_hud_details_btn.visible:
+		if _test_editor_hud_details_btn.get_global_rect().has_point(pos):
+			_on_test_editor_hud_toggle_details_internal()
 			handled = true
 
 	# Restore focus if we handled a button click
@@ -3395,17 +3431,17 @@ func _handle_hud_button_click(pos: Vector2) -> bool:
 	return handled
 
 # Internal toggle function (without focus handling - that's done by _handle_hud_button_click)
-func _on_test_editor_hud_toggle_steps_internal():
-	if not _test_editor_hud_steps_container or not _test_editor_hud_steps_btn:
+func _on_test_editor_hud_toggle_details_internal():
+	if not _test_editor_hud_body_container or not _test_editor_hud_details_btn:
 		return
-	var is_visible = _test_editor_hud_steps_container.visible
-	_test_editor_hud_steps_container.visible = not is_visible
-	_test_editor_hud_steps_btn.text = "▼ Steps" if not is_visible else "▶ Steps"
-	# Populate steps only if not already populated
-	if not is_visible and _test_editor_hud_current_events.size() > 0 and _test_editor_hud_step_rows.is_empty():
+	_test_editor_hud_collapsed = not _test_editor_hud_collapsed
+	_test_editor_hud_body_container.visible = not _test_editor_hud_collapsed
+	_test_editor_hud_details_btn.text = "▼ Details" if not _test_editor_hud_collapsed else "▶ Details"
+	# Populate steps only if not already populated (when expanding)
+	if not _test_editor_hud_collapsed and _test_editor_hud_current_events.size() > 0 and _test_editor_hud_step_rows.is_empty():
 		_populate_test_editor_hud_steps()
 	# Re-apply highlighting when expanding (preserve pass/fail state)
-	if not is_visible and not _test_editor_hud_step_rows.is_empty():
+	if not _test_editor_hud_collapsed and not _test_editor_hud_step_rows.is_empty():
 		if _step_mode_test_passed:
 			_mark_all_steps_passed()
 		elif _failed_step_index >= 0:
@@ -3478,6 +3514,9 @@ func _on_test_editor_hud_play():
 	if _executor.is_paused:
 		# Play to end: mark all remaining steps as auto-play and run
 		_mark_remaining_steps_auto_play()
+		# Hide HUD during full playback if visibility toggle is enabled
+		if _test_editor_hud_hidden_during_playback and _test_editor_hud:
+			_test_editor_hud.visible = false
 		_executor.unpause()
 	_restore_hud_focus()
 
@@ -3493,6 +3532,9 @@ func _on_test_editor_hud_step():
 		return
 	# Update environment warning (user may have moved window to different monitor)
 	_update_test_editor_env_warning()
+	# Hide HUD during step execution if visibility toggle is enabled
+	if _test_editor_hud_hidden_during_playback and _test_editor_hud:
+		_test_editor_hud.visible = false
 	# Restore focus BEFORE stepping so the test step can use it
 	_restore_hud_focus_immediate()
 	_executor.step_forward()
@@ -3503,6 +3545,19 @@ func _on_test_editor_hud_close():
 		_abort_test_to_tests_tab()
 	else:
 		_close_debug_hud_to_tests_tab()
+
+func _on_test_editor_hud_visibility_toggled(button_pressed: bool):
+	# Toggle hide-during-playback mode
+	_test_editor_hud_hidden_during_playback = button_pressed
+
+	# Update icon based on state
+	if _test_editor_hud_visibility_btn:
+		if button_pressed:
+			_test_editor_hud_visibility_btn.icon = load("res://addons/godot-ui-automation/icons/eye-off.svg")
+			_test_editor_hud_visibility_btn.tooltip_text = "UI hidden during playback (click to show)"
+		else:
+			_test_editor_hud_visibility_btn.icon = load("res://addons/godot-ui-automation/icons/eye.svg")
+			_test_editor_hud_visibility_btn.tooltip_text = "Hide UI during playback"
 
 func _on_test_name_submitted(_new_text: String):
 	# Called when user presses Enter in the title edit

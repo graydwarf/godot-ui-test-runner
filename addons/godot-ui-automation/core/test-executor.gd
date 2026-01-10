@@ -434,10 +434,12 @@ func _run_replay_internal(test_data: Dictionary, recorded_events: Array[Dictiona
 	var original_window = _store_window_state()
 
 	# Execute setup actions (e.g., maximize window) BEFORE environment check
-	await _execute_setup(test_data)
+	var setup_handled_window = await _execute_setup(test_data)
 
 	# Restore recorded window state (for legacy tests without setup section)
-	await _restore_recorded_window(test_data.get("recorded_window", {}))
+	# Skip if setup already handled window mode to avoid flicker
+	if not setup_handled_window:
+		await _restore_recorded_window(test_data.get("recorded_window", {}))
 
 	# Calculate viewport scaling
 	var scale = _calculate_viewport_scale(test_data)
@@ -712,14 +714,16 @@ func _check_environment_match(test_data: Dictionary) -> Dictionary:
 	}
 
 # Execute setup actions before test playback
-func _execute_setup(test_data: Dictionary) -> void:
+func _execute_setup(test_data: Dictionary) -> bool:
 	var setup = test_data.get("setup", {})
+	var handled_window = false
 	if setup.is_empty():
-		return
+		return handled_window
 
 	print("[TestExecutor] Executing setup actions...")
 
 	if setup.get("maximize_window", false):
+		handled_window = true
 		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_MAXIMIZED:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 			print("[TestExecutor] Setup: Maximized window")
@@ -727,6 +731,8 @@ func _execute_setup(test_data: Dictionary) -> void:
 			await _tree.process_frame
 		else:
 			print("[TestExecutor] Setup: Window already maximized")
+
+	return handled_window
 
 func _execute_event(event: Dictionary, index: int, scale: Vector2) -> void:
 	var event_type = event.get("type", "")

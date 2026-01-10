@@ -2814,9 +2814,11 @@ func _create_test_editor_hud_step_row(index: int, event: Dictionary) -> Control:
 		# Add Diff button (hidden by default, shown when validation fails)
 		var diff_btn = Button.new()
 		diff_btn.name = "DiffBtn"
-		diff_btn.text = "Diff"
+		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
 		diff_btn.tooltip_text = "View comparison (Expected vs Actual)"
-		diff_btn.custom_minimum_size = Vector2(45, 28)
+		diff_btn.custom_minimum_size = Vector2(36, 28)
+		diff_btn.expand_icon = true
+		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		diff_btn.focus_mode = Control.FOCUS_NONE
 		diff_btn.visible = false  # Hidden until validation fails
 		diff_btn.pressed.connect(_on_step_diff_btn_pressed)

@@ -1189,10 +1189,11 @@ func _add_result_row_in_run(container: Control, result: Dictionary, run_id: Stri
 			row.add_child(step_btn)
 
 		var diff_btn = Button.new()
-		diff_btn.text = "Diff"
+		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
 		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
-		diff_btn.custom_minimum_size = Vector2(50, 28)
-		diff_btn.add_theme_font_size_override("font_size", 12)
+		diff_btn.custom_minimum_size = Vector2(36, 28)
+		diff_btn.expand_icon = true
+		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		diff_btn.pressed.connect(_on_view_diff.bind(result))
 		row.add_child(diff_btn)
 
@@ -1268,9 +1269,11 @@ func _add_result_row(results_list: Control, result: Dictionary, result_index: in
 			row.add_child(step_btn)
 
 		var diff_btn = Button.new()
-		diff_btn.text = "View Diff"
+		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
 		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
-		diff_btn.custom_minimum_size = Vector2(80, 28)
+		diff_btn.custom_minimum_size = Vector2(36, 28)
+		diff_btn.expand_icon = true
+		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		diff_btn.pressed.connect(_on_view_diff.bind(result))
 		row.add_child(diff_btn)
 

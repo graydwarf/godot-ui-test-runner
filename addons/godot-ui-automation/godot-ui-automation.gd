@@ -343,6 +343,7 @@ func _set_test_mode(active: bool, set_recording_meta: bool = false) -> void:
 
 func _on_executor_test_started(test_name: String):
 	var is_restart = (current_test_name == test_name)
+	var coming_from_recording = _sync_collapse_from_recording
 	current_test_name = test_name
 	_set_test_mode(true)
 	test_started.emit(test_name)
@@ -355,12 +356,21 @@ func _on_executor_test_started(test_name: String):
 			for child in _test_editor_hud_steps_list.get_children():
 				child.queue_free()
 		_test_editor_hud_step_rows.clear()
-		# Only clear auto-play steps on new test, not restart
-		if not is_restart:
+		# Reset test state when coming from recording (new or re-record)
+		if coming_from_recording:
+			_auto_play_steps.clear()
+			_failed_step_index = -1
+			_passed_step_indices.clear()
+			_step_mode_test_passed = false
+			_set_test_editor_hud_border_color(Color(1.0, 1.0, 1.0, 1.0))  # White/neutral
+			# Emit signal to trigger board cleanup (same as Reset Test button)
+			ui_test_runner_test_starting.emit(test_name)
+		elif not is_restart:
+			# Also reset on new test (not from recording, not restart)
 			_auto_play_steps.clear()
 		for event in _executor._current_events:
 			_test_editor_hud_current_events.append(event.duplicate())
-		_show_test_editor_hud(_sync_collapse_from_recording)
+		_show_test_editor_hud(coming_from_recording)
 		_sync_collapse_from_recording = false  # Clear flag after use
 
 		# Apply pending failed step highlight (from "Step X" button)

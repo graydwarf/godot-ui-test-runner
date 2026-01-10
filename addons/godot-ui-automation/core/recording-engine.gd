@@ -100,10 +100,10 @@ func start_recording() -> void:
 	_clear_recording_steps_ui()  # Clear live steps UI
 	record_start_time = Time.get_ticks_msec()
 	mouse_is_down = false
-	# Auto-maximize window if setting enabled
+	# Auto-maximize window if setting enabled (skip if already maximized or fullscreen)
 	if ScreenshotValidator.auto_maximize_recording:
 		var window = _tree.root
-		if window.mode != Window.MODE_MAXIMIZED:
+		if window.mode != Window.MODE_MAXIMIZED and window.mode != Window.MODE_FULLSCREEN:
 			_was_maximized_before_recording = false
 			window.mode = Window.MODE_MAXIMIZED
 		else:

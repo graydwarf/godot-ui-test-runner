@@ -25,6 +25,7 @@ var _no_ignore: bool = false  # Bypass all gdlint:ignore directives
 var _config_path: String = ""  # Custom config file path
 var _severity_filter: String = ""  # Minimum severity: "info", "warning", "critical"
 var _check_filter: Array[String] = []  # Specific checks to run
+var _top_limit: int = 0  # Limit to top N issues (0 = no limit)
 var _exit_code: int = 0
 
 func _init() -> void:
@@ -69,6 +70,10 @@ func _parse_arguments() -> void:
 							var trimmed := check.strip_edges()
 							if not trimmed.is_empty():
 								_check_filter.append(trimmed)
+						i += 1
+				"--top":
+					if i + 1 < args.size():
+						_top_limit = int(args[i + 1])
 						i += 1
 				"--clickable":
 					_output_format = "clickable"
@@ -115,6 +120,7 @@ func _print_help() -> void:
 	print("  --format <type>   Output format: console, json, clickable, html, github (default: console)")
 	print("  --severity <lvl>  Minimum severity to report: info, warning, critical")
 	print("  --check <checks>  Comma-separated list of checks to run (e.g., long-function,high-complexity)")
+	print("  --top <N>         Show only top N issues sorted by priority")
 	print("  --json            Shorthand for --format json")
 	print("  --clickable       Shorthand for --format clickable (Godot Output panel format)")
 	print("  --html            Shorthand for --format html (generates HTML report)")
@@ -163,6 +169,10 @@ func _run_analysis() -> void:
 	# Apply severity filter if specified
 	if not _severity_filter.is_empty():
 		_apply_severity_filter(merged_result)
+
+	# Apply priority sort and limit if --top specified
+	if _top_limit > 0:
+		_apply_priority_sort_and_limit(merged_result)
 
 	match _output_format:
 		"json":
@@ -255,6 +265,48 @@ func _apply_severity_filter(result) -> void:
 			return  # No filtering needed
 
 	result.issues = result.issues.filter(func(issue): return issue.severity >= min_severity)
+
+
+# Sort issues by priority and limit to top N
+func _apply_priority_sort_and_limit(result) -> void:
+	# Sort by severity (desc), then by extracted value (desc), then by line number
+	result.issues.sort_custom(_compare_issue_priority)
+
+	# Truncate to top N
+	if result.issues.size() > _top_limit:
+		result.issues = result.issues.slice(0, _top_limit)
+
+
+func _compare_issue_priority(a, b) -> bool:
+	# Higher severity first
+	if a.severity != b.severity:
+		return a.severity > b.severity
+
+	# Within same severity, extract numeric value from message (higher = worse)
+	var a_val := _extract_issue_value(a)
+	var b_val := _extract_issue_value(b)
+	if a_val != b_val:
+		return a_val > b_val
+
+	# Same file: earlier line number first
+	if a.file_path == b.file_path:
+		return a.line < b.line
+
+	# Different files: alphabetical
+	return a.file_path < b.file_path
+
+
+func _extract_issue_value(issue) -> int:
+	# Extract numbers from message like "complexity 54" or "exceeds 30 lines (158)"
+	var regex := RegEx.new()
+	regex.compile("\\((\\d+)\\)|complexity (\\d+)|(\\d+) lines")
+	var result := regex.search(issue.message)
+	if result:
+		for i in range(1, 4):
+			if result.get_string(i) != "":
+				return int(result.get_string(i))
+	return 0
+
 
 # gdlint:ignore-function:print-statement - CLI JSON output
 func _output_json(result) -> void:

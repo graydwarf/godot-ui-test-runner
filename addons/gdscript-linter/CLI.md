@@ -37,6 +37,7 @@ godot --headless --script res://addons/gdscript-linter/analyzer/analyze-cli.gd -
 | `--format <type>` | Output format: `console`, `json`, `clickable`, `html`, `github` |
 | `--severity <level>` | Minimum severity to report: `info`, `warning`, `critical` |
 | `--check <checks>` | Comma-separated list of checks to run |
+| `--top <N>` | Show only top N issues sorted by priority |
 | `--json` | Shorthand for `--format json` |
 | `--clickable` | Shorthand for `--format clickable` (Godot Output panel format) |
 | `--html` | Shorthand for `--format html` |
@@ -210,6 +211,16 @@ godot --headless --script ... -- src/ scripts/ autoload/
 godot --headless --script ... -- --severity critical
 ```
 
+### Show Top 10 Priority Issues
+
+```bash
+# Top 10 issues sorted by severity, then by "badness" (complexity, line count)
+godot --headless --script ... -- --top 10
+
+# Top 5 critical issues for quick CI summary
+godot --headless --script ... -- --top 5 --severity critical --format github
+```
+
 ### Run Specific Checks
 
 ```bash
@@ -256,6 +267,60 @@ For use with `--check`:
 | `naming-enum` | Enum naming convention |
 | `unused-variable` | Local variables never used |
 | `unused-parameter` | Function parameters never used |
+
+## Common Mistakes
+
+### Wrong: Passing a file path
+```bash
+# DON'T do this - CLI expects directories, not files
+godot --headless --script ... -- src/player.gd
+```
+
+### Right: Pass a directory
+```bash
+# DO this - pass the directory containing .gd files
+godot --headless --script ... -- src/
+```
+
+### Wrong: Forgetting the `--` separator
+```bash
+# DON'T do this - Godot will consume --top as its own arg
+godot --headless --script ... --top 5
+```
+
+### Right: Use `--` before linter options
+```bash
+# DO this - the -- tells Godot "everything after is for the script"
+godot --headless --script ... -- --top 5
+```
+
+### Wrong: Running from wrong directory
+```bash
+# DON'T do this if gdscript-linter isn't in this project
+cd /some/other/project
+godot --headless --script res://addons/gdscript-linter/analyzer/analyze-cli.gd
+```
+
+### Right: Use --path for external projects
+```bash
+# DO this - run from the linter's project, use --path for target
+cd /project-with-linter-installed
+godot --headless --script res://addons/gdscript-linter/analyzer/analyze-cli.gd -- --path /other/project
+```
+
+## For AI Assistants
+
+When using this CLI:
+
+1. **Always use `--` before any linter options** - required separator
+2. **Pass directory paths, not file paths** - the linter scans directories recursively
+3. **The script path is relative to the project with the linter installed** - use `--path` for external projects
+4. **Default excludes `addons/`** - if analyzing a plugin, the target project needs `scan_addons: true` in gdlint.json
+
+Example for analyzing an external project:
+```bash
+godot --headless --script res://addons/gdscript-linter/analyzer/analyze-cli.gd -- --path "C:/path/to/project" --top 10
+```
 
 ## Performance Notes
 

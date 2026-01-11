@@ -1064,6 +1064,7 @@ func is_click_on_hud(pos: Vector2) -> bool:
 # EVENT CAPTURE
 # ============================================================================
 
+# gdlint:ignore-function:high-complexity=47
 func capture_event(event: InputEvent) -> void:
 	if is_recording_paused:
 		return

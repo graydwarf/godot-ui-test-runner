@@ -882,6 +882,7 @@ func _handle_debug_keys(event: InputEventKey) -> bool:
 	return false
 
 # Returns true if ESC was handled
+# gdlint:ignore-function:high-complexity=17
 func _handle_escape_key() -> bool:
 	# ESC during step debugger → abort and return to Tests tab
 	if is_running and _executor and _executor.step_mode:

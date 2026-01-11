@@ -855,9 +855,88 @@ func _was_key_recently_recorded(keycode: int, ctrl: bool, shift: bool) -> bool:
 func _mark_key_recorded(keycode: int, ctrl: bool, shift: bool):
 	_recent_recorded_keys.append({"keycode": keycode, "ctrl": ctrl, "shift": shift, "time": Time.get_ticks_msec()})
 
-func _unhandled_input(event):
-	# Note: Region selection input is handled by region selector's overlay
+# Returns true if a debug key (P, Space, R) was handled
+func _handle_debug_keys(event: InputEventKey) -> bool:
+	# Only handle when paused or HUD visible after completion
+	var can_handle = false
+	if _executor and _executor.is_paused:
+		can_handle = true
+	elif _test_editor_hud and _test_editor_hud.visible and not is_running:
+		can_handle = true
 
+	if not can_handle:
+		return false
+
+	if event.keycode == KEY_P:
+		if _executor and _executor.is_paused:
+			_on_test_editor_hud_play()
+		return true
+	elif event.keycode == KEY_SPACE:
+		if _executor and _executor.is_paused:
+			_executor.step_forward()
+		return true
+	elif event.keycode == KEY_R:
+		_on_test_editor_hud_restart()
+		return true
+
+	return false
+
+# Returns true if ESC was handled
+func _handle_escape_key() -> bool:
+	# ESC during step debugger → abort and return to Tests tab
+	if is_running and _executor and _executor.step_mode:
+		print("[UITestRunner] ESC pressed in step debugger - returning to Tests tab")
+		_abort_test_to_tests_tab()
+		return true
+
+	# ESC when playback HUD visible but test not running (completed in debug mode)
+	if _test_editor_hud and _test_editor_hud.visible and not is_running:
+		print("[UITestRunner] ESC pressed with debug HUD visible - closing and returning to Tests tab")
+		_close_debug_hud_to_tests_tab()
+		return true
+
+	# ESC during normal test execution → cancel test and batch
+	if is_running or is_batch_running:
+		print("[UITestRunner] ESC pressed - cancelling test run")
+		_executor.cancel_test()
+		_batch_cancelled = true
+		return true
+
+	# ESC during region selection → cancel just the selection
+	if is_selecting_region:
+		_region_selector.cancel_selection()
+		return true
+
+	# ESC during recording → cancel recording
+	if is_recording:
+		_cancel_recording()
+		return true
+
+	# ESC to close comparison viewer
+	if _comparison_viewer and _comparison_viewer.is_visible():
+		_close_comparison_viewer()
+		return true
+
+	# ESC to close rename dialog
+	if rename_dialog and rename_dialog.visible:
+		_close_rename_dialog()
+		return true
+
+	# ESC to close test selector
+	if is_selector_open:
+		_close_test_selector()
+		return true
+
+	return false
+
+# Handles F10/F11 recording keys
+func _handle_recording_keys(event: InputEventKey) -> void:
+	if event.keycode == KEY_F10 and is_recording:
+		_capture_screenshot_during_recording()
+	elif event.keycode == KEY_F11 and is_recording:
+		_recording.stop_recording()
+
+func _unhandled_input(event):
 	# Forward mouse events to test manager for drag handling
 	if _test_manager and _test_manager.is_open:
 		if _test_manager.handle_input(event):
@@ -865,88 +944,12 @@ func _unhandled_input(event):
 			return
 
 	if event is InputEventKey and event.pressed:
-		# Playback debug controls - ONLY when:
-		# 1. Test is paused (user is interacting, not test key events)
-		# 2. Test completed but HUD still visible (user can restart)
-		# When test is running/auto-playing, key events are part of the test - don't intercept
-		var can_handle_debug_keys = false
-		if _executor and _executor.is_paused:
-			can_handle_debug_keys = true
-		elif _test_editor_hud and _test_editor_hud.visible and not is_running:
-			# HUD visible but test not running = completed, allow restart
-			can_handle_debug_keys = true
-
-		if can_handle_debug_keys:
-			if event.keycode == KEY_P:
-				# P = Play to end - only when paused
-				if _executor and _executor.is_paused:
-					_on_test_editor_hud_play()
-				return
-			elif event.keycode == KEY_SPACE:
-				# Space = Step forward one step - only when paused
-				if _executor and _executor.is_paused:
-					_executor.step_forward()
-				return
-			elif event.keycode == KEY_R:
-				# R = Reset test
-				_on_test_editor_hud_restart()
-				return
-
-		# ESC handling - priority order matters
+		if _handle_debug_keys(event):
+			return
 		if event.keycode == KEY_ESCAPE:
-			# ESC during step debugger (running or paused) → abort and return to Tests tab (no result)
-			if is_running and _executor and _executor.step_mode:
-				print("[UITestRunner] ESC pressed in step debugger - returning to Tests tab")
-				_abort_test_to_tests_tab()
+			if _handle_escape_key():
 				return
-
-			# ESC when playback HUD visible but test not running (completed in debug mode)
-			# → close HUD and return to Tests tab (no result logged)
-			if _test_editor_hud and _test_editor_hud.visible and not is_running:
-				print("[UITestRunner] ESC pressed with debug HUD visible - closing and returning to Tests tab")
-				_close_debug_hud_to_tests_tab()
-				return
-
-			# ESC during normal test execution → cancel test and batch (highest priority)
-			if is_running or is_batch_running:
-				print("[UITestRunner] ESC pressed - cancelling test run")
-				_executor.cancel_test()
-				_batch_cancelled = true
-				return
-
-			# ESC during region selection → cancel just the selection (not the recording)
-			if is_selecting_region:
-				_region_selector.cancel_selection()
-				return
-
-			# ESC during recording → cancel recording (discard and return to Tests tab)
-			if is_recording:
-				_cancel_recording()
-				return
-
-			# ESC to close comparison viewer
-			if _comparison_viewer and _comparison_viewer.is_visible():
-				_close_comparison_viewer()
-				return
-
-			# ESC to close rename dialog
-			if rename_dialog and rename_dialog.visible:
-				_close_rename_dialog()
-				return
-
-			# ESC to close test selector
-			if is_selector_open:
-				_close_test_selector()
-				return
-
-		if event.keycode == KEY_F10:
-			# F10 captures screenshot during recording only
-			if is_recording:
-				_capture_screenshot_during_recording()
-		elif event.keycode == KEY_F11:
-			# F11 only stops recording (use Test Manager to start recording)
-			if is_recording:
-				_recording.stop_recording()
+		_handle_recording_keys(event)
 
 func _start_demo_test():
 	print("[UITestRunner] F9 pressed, is_running=", is_running)

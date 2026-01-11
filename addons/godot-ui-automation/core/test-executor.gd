@@ -740,263 +740,297 @@ func _execute_event(event: Dictionary, index: int, scale: Vector2) -> void:
 
 	match event_type:
 		"click":
-			var pos = event.get("pos", Vector2.ZERO)
-			var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
-			var ctrl = event.get("ctrl", false)
-			var shift = event.get("shift", false)
-			last_position_debug = {
-				"type": "click",
-				"recorded": pos,
-				"scaled": scaled_pos,
-				"actual": scaled_pos,
-				"ctrl": ctrl,
-				"shift": shift
-			}
-			position_debug.emit(last_position_debug)
-			var mods = ("Ctrl+" if ctrl else "") + ("Shift+" if shift else "")
-			print("[REPLAY] Step %d: %sClick at %s (scaled: %s)" % [index + 1, mods, pos, scaled_pos])
-			await _playback.click_at(scaled_pos, ctrl, shift)
+			await _execute_click(event, index, scale)
 		"double_click":
-			var pos = event.get("pos", Vector2.ZERO)
-			var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
-			var ctrl = event.get("ctrl", false)
-			var shift = event.get("shift", false)
-			last_position_debug = {
-				"type": "double_click",
-				"recorded": pos,
-				"scaled": scaled_pos,
-				"actual": scaled_pos,
-				"ctrl": ctrl,
-				"shift": shift
-			}
-			position_debug.emit(last_position_debug)
-			var mods = ("Ctrl+" if ctrl else "") + ("Shift+" if shift else "")
-			print("[REPLAY] Step %d: %sDouble-click at %s (scaled: %s)" % [index + 1, mods, pos, scaled_pos])
-			await _playback.move_to(scaled_pos)
-			await _playback.double_click(ctrl, shift)
+			await _execute_double_click(event, index, scale)
 		"drag":
-			var from_pos = event.get("from", Vector2.ZERO)
-			var to_pos = event.get("to", Vector2.ZERO)
-			var scaled_from = Vector2(from_pos.x * scale.x, from_pos.y * scale.y)
-			var scaled_to = Vector2(to_pos.x * scale.x, to_pos.y * scale.y)
-			var hold_time = 0.1  # Fixed hold time at end of drag before release
-			var delta = scaled_to - scaled_from
-			var no_drop = event.get("no_drop", false)
-			var drag_ctrl = event.get("ctrl", false)
-			var drag_shift = event.get("shift", false)
-
-			# Object-relative coordinate adjustment for robust playback
-			var object_type = event.get("object_type", "")
-			var object_id = event.get("object_id", "")
-			if not object_type.is_empty() and not object_id.is_empty():
-				var current_pos = _main_runner.get_item_screen_pos_by_id(object_type, object_id)
-				if current_pos != Vector2.ZERO:
-					# Object found - adjust coordinates based on its current position
-					var click_offset = event.get("click_offset", Vector2.ZERO)
-					var adjusted_from = current_pos + click_offset
-					var adjusted_to = adjusted_from + delta  # Preserve the movement delta
-					last_position_debug = {
-						"type": "drag",
-						"mode": "object-relative",
-						"recorded_from": from_pos,
-						"recorded_to": to_pos,
-						"scaled_from": scaled_from,
-						"scaled_to": scaled_to,
-						"object_type": object_type,
-						"object_id": object_id,
-						"object_screen_pos": current_pos,
-						"click_offset": click_offset,
-						"delta": delta,
-						"actual_from": adjusted_from,
-						"actual_to": adjusted_to,
-						"no_drop": no_drop
-					}
-					position_debug.emit(last_position_debug)
-					var no_drop_label = " (no drop)" if no_drop else ""
-					var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
-					print("[REPLAY] Step %d: %sDrag%s (object-relative) %s id=%s" % [index + 1, mods_label, no_drop_label, object_type, object_id])
-					print("  Object at: %s, click_offset: %s" % [current_pos, click_offset])
-					print("  Adjusted: %s->%s (original: %s->%s)" % [adjusted_from, adjusted_to, scaled_from, scaled_to])
-					if no_drop:
-						await _playback.drag_segment(adjusted_from, adjusted_to, 0.5, drag_ctrl, drag_shift)
-					else:
-						await _playback.drag(adjusted_from, adjusted_to, 0.5, hold_time, drag_ctrl, drag_shift)
-				else:
-					# Object not found - fall back to absolute coordinates
-					last_position_debug = {
-						"type": "drag",
-						"mode": "absolute-fallback",
-						"recorded_from": from_pos,
-						"recorded_to": to_pos,
-						"object_type": object_type,
-						"object_id": object_id,
-						"object_not_found": true,
-						"actual_from": scaled_from,
-						"actual_to": scaled_to,
-						"no_drop": no_drop
-					}
-					position_debug.emit(last_position_debug)
-					var no_drop_label = " (no drop)" if no_drop else ""
-					var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
-					print("[REPLAY] Step %d: %sDrag%s %s->%s (object %s:%s not found, using absolute)" % [
-						index + 1, mods_label, no_drop_label, from_pos, to_pos, object_type, object_id])
-					if no_drop:
-						await _playback.drag_segment(scaled_from, scaled_to, 0.5, drag_ctrl, drag_shift)
-					else:
-						await _playback.drag(scaled_from, scaled_to, 0.5, hold_time, drag_ctrl, drag_shift)
-			else:
-				# No object info - check for world/cell coordinates (toolbar drags, etc.)
-				var to_world = event.get("to_world", null)
-				var to_cell = event.get("to_cell", null)
-				var actual_to = scaled_to
-				var actual_from = scaled_from  # Default to scaled
-				var mode = "absolute"
-
-				if to_world != null and to_world is Vector2:
-					# Use world coordinates for precise resolution-independent playback
-					# When to_world is present, the drag started from a fixed UI element (toolbar)
-					# So DON'T scale the from position - it's at a fixed screen location
-					actual_from = from_pos
-					actual_to = _main_runner.world_to_screen(to_world)
-					mode = "world-coords"
-					var no_drop_label = " (no drop)" if no_drop else ""
-					var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
-					print("[REPLAY] Step %d: %sDrag%s (world-coords) from=%s (fixed UI), to_world=%s -> screen=%s" % [
-						index + 1, mods_label, no_drop_label, actual_from, to_world, actual_to
-					])
-				elif to_cell != null and to_cell is Vector2i:
-					# Fallback to cell coordinates for grid-snapped playback
-					actual_to = _main_runner.cell_to_screen(to_cell)
-					mode = "cell-coords"
-					var no_drop_label = " (no drop)" if no_drop else ""
-					var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
-					print("[REPLAY] Step %d: %sDrag%s (cell-coords) to_cell=(%d, %d) -> screen=%s" % [
-						index + 1, mods_label, no_drop_label, to_cell.x, to_cell.y, actual_to
-					])
-				else:
-					var no_drop_label = " (no drop)" if no_drop else ""
-					var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
-					print("[REPLAY] Step %d: %sDrag%s %s->%s (scaled: %s->%s, delta: %s, hold %.1fs)" % [
-						index + 1, mods_label, no_drop_label, from_pos, to_pos, scaled_from, scaled_to, delta, hold_time
-					])
-
-				last_position_debug = {
-					"type": "drag",
-					"mode": mode,
-					"recorded_from": from_pos,
-					"recorded_to": to_pos,
-					"scaled_from": scaled_from,
-					"scaled_to": scaled_to,
-					"delta": delta,
-					"actual_from": actual_from,
-					"actual_to": actual_to,
-					"no_drop": no_drop
-				}
-				if to_world != null:
-					last_position_debug["to_world"] = to_world
-				if to_cell != null:
-					last_position_debug["to_cell"] = to_cell
-				position_debug.emit(last_position_debug)
-				if no_drop:
-					await _playback.drag_segment(actual_from, actual_to, 0.5, drag_ctrl, drag_shift)
-				else:
-					await _playback.drag(actual_from, actual_to, 0.5, hold_time, drag_ctrl, drag_shift)
+			await _execute_drag(event, index, scale)
 		"pan":
-			var from_pos = event.get("from", Vector2.ZERO)
-			var to_pos = event.get("to", Vector2.ZERO)
-			var scaled_from = Vector2(from_pos.x * scale.x, from_pos.y * scale.y)
-			var scaled_to = Vector2(to_pos.x * scale.x, to_pos.y * scale.y)
-			last_position_debug = {
-				"type": "pan",
-				"recorded_from": from_pos,
-				"recorded_to": to_pos,
-				"actual_from": scaled_from,
-				"actual_to": scaled_to
-			}
-			position_debug.emit(last_position_debug)
-			print("[REPLAY] Step %d: Pan %s->%s (scaled: %s->%s)" % [index + 1, from_pos, to_pos, scaled_from, scaled_to])
-			await _playback.pan(scaled_from, scaled_to)
+			await _execute_pan(event, index, scale)
 		"right_click":
-			var pos = event.get("pos", Vector2.ZERO)
-			var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
-			last_position_debug = {
-				"type": "right_click",
-				"recorded": pos,
-				"actual": scaled_pos
-			}
-			position_debug.emit(last_position_debug)
-			print("[REPLAY] Step %d: Right-click at %s (scaled: %s)" % [index + 1, pos, scaled_pos])
-			await _playback.move_to(scaled_pos)
-			await _playback.right_click()
+			await _execute_right_click(event, index, scale)
 		"scroll":
-			var direction = event.get("direction", "in")
-			var ctrl = event.get("ctrl", false)
-			var shift = event.get("shift", false)
-			var alt = event.get("alt", false)
-			var factor = event.get("factor", 1.0)
-			var pos = event.get("pos", Vector2.ZERO)
-			var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
-			last_position_debug = {
-				"type": "scroll",
-				"direction": direction,
-				"ctrl": ctrl,
-				"shift": shift,
-				"alt": alt,
-				"factor": factor,
-				"recorded_pos": pos,
-				"actual_pos": scaled_pos
-			}
-			position_debug.emit(last_position_debug)
-			var mods = ""
-			if ctrl: mods += "Ctrl+"
-			if shift: mods += "Shift+"
-			if alt: mods += "Alt+"
-			print("[REPLAY] Step %d: %sScroll %s at %s (scaled: %s, factor: %.2f)" % [index + 1, mods, direction, pos, scaled_pos, factor])
-			await _playback.scroll(scaled_pos, direction, ctrl, shift, alt, factor)
+			await _execute_scroll(event, index, scale)
 		"key":
-			var keycode = event.get("keycode", 0)
-			var mods = ""
-			if event.get("ctrl", false):
-				mods += "Ctrl+"
-			if event.get("shift", false):
-				mods += "Shift+"
-			var key_mouse_pos = event.get("mouse_pos", null)
-			print("[REPLAY] Step %d: Key %s%s" % [index + 1, mods, OS.get_keycode_string(keycode)])
-			await _playback.press_key(keycode, event.get("shift", false), event.get("ctrl", false), key_mouse_pos)
+			await _execute_key(event, index)
 		"wait":
-			var duration_ms = event.get("duration", 1000)
-			print("[REPLAY] Step %d: Wait %.1fs" % [index + 1, duration_ms / 1000.0])
-			await _playback.wait(duration_ms / 1000.0, false)
+			await _execute_wait(event, index)
 		"set_clipboard_image":
-			var image_path = event.get("path", "")
-			var paste_pos = event.get("mouse_pos", null)
-			print("[REPLAY] Step %d: Set clipboard image: %s" % [index + 1, image_path])
-			await _playback.set_clipboard_image(image_path, paste_pos)
+			await _execute_set_clipboard_image(event, index)
 		"screenshot_validation":
-			var screenshot_path = event.get("path", "")
-			var screenshot_region = event.get("region", {})
-			print("[REPLAY] Step %d: Validating screenshot: %s" % [index + 1, screenshot_path.get_file()])
-			print("[REPLAY] Original region: x=%s y=%s w=%s h=%s" % [
-				screenshot_region.get("x", 0), screenshot_region.get("y", 0),
-				screenshot_region.get("w", 0), screenshot_region.get("h", 0)])
-			print("[REPLAY] Scale factor: x=%.3f y=%.3f" % [scale.x, scale.y])
-			if screenshot_path and not screenshot_region.is_empty():
-				var region = Rect2(
-					screenshot_region.get("x", 0) * scale.x,
-					screenshot_region.get("y", 0) * scale.y,
-					screenshot_region.get("w", 0) * scale.x,
-					screenshot_region.get("h", 0) * scale.y
-				)
-				print("[REPLAY] Scaled region: %s" % region)
-				var passed = await _main_runner.validate_screenshot(screenshot_path, region)
-				if not passed:
-					# Store validation failure info for caller to handle
-					event["_validation_failed"] = true
-					event["_baseline_path"] = screenshot_path
-					event["_actual_path"] = _main_runner.last_actual_path
+			await _execute_screenshot_validation(event, index, scale)
 
 	if wait_after_ms > 0:
 		await _playback.wait(wait_after_ms / 1000.0, false)
+
+func _execute_click(event: Dictionary, index: int, scale: Vector2) -> void:
+	var pos = event.get("pos", Vector2.ZERO)
+	var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
+	var ctrl = event.get("ctrl", false)
+	var shift = event.get("shift", false)
+	last_position_debug = {
+		"type": "click",
+		"recorded": pos,
+		"scaled": scaled_pos,
+		"actual": scaled_pos,
+		"ctrl": ctrl,
+		"shift": shift
+	}
+	position_debug.emit(last_position_debug)
+	var mods = ("Ctrl+" if ctrl else "") + ("Shift+" if shift else "")
+	print("[REPLAY] Step %d: %sClick at %s (scaled: %s)" % [index + 1, mods, pos, scaled_pos])
+	await _playback.click_at(scaled_pos, ctrl, shift)
+
+func _execute_double_click(event: Dictionary, index: int, scale: Vector2) -> void:
+	var pos = event.get("pos", Vector2.ZERO)
+	var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
+	var ctrl = event.get("ctrl", false)
+	var shift = event.get("shift", false)
+	last_position_debug = {
+		"type": "double_click",
+		"recorded": pos,
+		"scaled": scaled_pos,
+		"actual": scaled_pos,
+		"ctrl": ctrl,
+		"shift": shift
+	}
+	position_debug.emit(last_position_debug)
+	var mods = ("Ctrl+" if ctrl else "") + ("Shift+" if shift else "")
+	print("[REPLAY] Step %d: %sDouble-click at %s (scaled: %s)" % [index + 1, mods, pos, scaled_pos])
+	await _playback.move_to(scaled_pos)
+	await _playback.double_click(ctrl, shift)
+
+func _execute_drag(event: Dictionary, index: int, scale: Vector2) -> void:
+	var from_pos = event.get("from", Vector2.ZERO)
+	var to_pos = event.get("to", Vector2.ZERO)
+	var scaled_from = Vector2(from_pos.x * scale.x, from_pos.y * scale.y)
+	var scaled_to = Vector2(to_pos.x * scale.x, to_pos.y * scale.y)
+	var delta = scaled_to - scaled_from
+	var no_drop = event.get("no_drop", false)
+	var drag_ctrl = event.get("ctrl", false)
+	var drag_shift = event.get("shift", false)
+
+	# Object-relative coordinate adjustment for robust playback
+	var object_type = event.get("object_type", "")
+	var object_id = event.get("object_id", "")
+	if not object_type.is_empty() and not object_id.is_empty():
+		await _execute_drag_with_object(event, index, from_pos, to_pos, scaled_from, scaled_to, delta, no_drop, drag_ctrl, drag_shift, object_type, object_id)
+	else:
+		await _execute_drag_without_object(event, index, from_pos, to_pos, scaled_from, scaled_to, delta, no_drop, drag_ctrl, drag_shift)
+
+func _execute_drag_with_object(event: Dictionary, index: int, from_pos: Vector2, to_pos: Vector2, scaled_from: Vector2, scaled_to: Vector2, delta: Vector2, no_drop: bool, drag_ctrl: bool, drag_shift: bool, object_type: String, object_id: String) -> void:
+	var hold_time = 0.1
+	var current_pos = _main_runner.get_item_screen_pos_by_id(object_type, object_id)
+
+	if current_pos != Vector2.ZERO:
+		# Object found - adjust coordinates based on its current position
+		var click_offset = event.get("click_offset", Vector2.ZERO)
+		var adjusted_from = current_pos + click_offset
+		var adjusted_to = adjusted_from + delta
+		last_position_debug = {
+			"type": "drag",
+			"mode": "object-relative",
+			"recorded_from": from_pos,
+			"recorded_to": to_pos,
+			"scaled_from": scaled_from,
+			"scaled_to": scaled_to,
+			"object_type": object_type,
+			"object_id": object_id,
+			"object_screen_pos": current_pos,
+			"click_offset": click_offset,
+			"delta": delta,
+			"actual_from": adjusted_from,
+			"actual_to": adjusted_to,
+			"no_drop": no_drop
+		}
+		position_debug.emit(last_position_debug)
+		var no_drop_label = " (no drop)" if no_drop else ""
+		var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
+		print("[REPLAY] Step %d: %sDrag%s (object-relative) %s id=%s" % [index + 1, mods_label, no_drop_label, object_type, object_id])
+		print("  Object at: %s, click_offset: %s" % [current_pos, click_offset])
+		print("  Adjusted: %s->%s (original: %s->%s)" % [adjusted_from, adjusted_to, scaled_from, scaled_to])
+		if no_drop:
+			await _playback.drag_segment(adjusted_from, adjusted_to, 0.5, drag_ctrl, drag_shift)
+		else:
+			await _playback.drag(adjusted_from, adjusted_to, 0.5, hold_time, drag_ctrl, drag_shift)
+	else:
+		# Object not found - fall back to absolute coordinates
+		last_position_debug = {
+			"type": "drag",
+			"mode": "absolute-fallback",
+			"recorded_from": from_pos,
+			"recorded_to": to_pos,
+			"object_type": object_type,
+			"object_id": object_id,
+			"object_not_found": true,
+			"actual_from": scaled_from,
+			"actual_to": scaled_to,
+			"no_drop": no_drop
+		}
+		position_debug.emit(last_position_debug)
+		var no_drop_label = " (no drop)" if no_drop else ""
+		var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
+		print("[REPLAY] Step %d: %sDrag%s %s->%s (object %s:%s not found, using absolute)" % [
+			index + 1, mods_label, no_drop_label, from_pos, to_pos, object_type, object_id])
+		if no_drop:
+			await _playback.drag_segment(scaled_from, scaled_to, 0.5, drag_ctrl, drag_shift)
+		else:
+			await _playback.drag(scaled_from, scaled_to, 0.5, hold_time, drag_ctrl, drag_shift)
+
+func _execute_drag_without_object(event: Dictionary, index: int, from_pos: Vector2, to_pos: Vector2, scaled_from: Vector2, scaled_to: Vector2, delta: Vector2, no_drop: bool, drag_ctrl: bool, drag_shift: bool) -> void:
+	var hold_time = 0.1
+	var to_world = event.get("to_world", null)
+	var to_cell = event.get("to_cell", null)
+	var actual_to = scaled_to
+	var actual_from = scaled_from
+	var mode = "absolute"
+
+	if to_world != null and to_world is Vector2:
+		actual_from = from_pos
+		actual_to = _main_runner.world_to_screen(to_world)
+		mode = "world-coords"
+		var no_drop_label = " (no drop)" if no_drop else ""
+		var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
+		print("[REPLAY] Step %d: %sDrag%s (world-coords) from=%s (fixed UI), to_world=%s -> screen=%s" % [
+			index + 1, mods_label, no_drop_label, actual_from, to_world, actual_to
+		])
+	elif to_cell != null and to_cell is Vector2i:
+		actual_to = _main_runner.cell_to_screen(to_cell)
+		mode = "cell-coords"
+		var no_drop_label = " (no drop)" if no_drop else ""
+		var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
+		print("[REPLAY] Step %d: %sDrag%s (cell-coords) to_cell=(%d, %d) -> screen=%s" % [
+			index + 1, mods_label, no_drop_label, to_cell.x, to_cell.y, actual_to
+		])
+	else:
+		var no_drop_label = " (no drop)" if no_drop else ""
+		var mods_label = ("Ctrl+" if drag_ctrl else "") + ("Shift+" if drag_shift else "")
+		print("[REPLAY] Step %d: %sDrag%s %s->%s (scaled: %s->%s, delta: %s, hold %.1fs)" % [
+			index + 1, mods_label, no_drop_label, from_pos, to_pos, scaled_from, scaled_to, delta, hold_time
+		])
+
+	last_position_debug = {
+		"type": "drag",
+		"mode": mode,
+		"recorded_from": from_pos,
+		"recorded_to": to_pos,
+		"scaled_from": scaled_from,
+		"scaled_to": scaled_to,
+		"delta": delta,
+		"actual_from": actual_from,
+		"actual_to": actual_to,
+		"no_drop": no_drop
+	}
+	if to_world != null:
+		last_position_debug["to_world"] = to_world
+	if to_cell != null:
+		last_position_debug["to_cell"] = to_cell
+	position_debug.emit(last_position_debug)
+
+	if no_drop:
+		await _playback.drag_segment(actual_from, actual_to, 0.5, drag_ctrl, drag_shift)
+	else:
+		await _playback.drag(actual_from, actual_to, 0.5, hold_time, drag_ctrl, drag_shift)
+
+func _execute_pan(event: Dictionary, index: int, scale: Vector2) -> void:
+	var from_pos = event.get("from", Vector2.ZERO)
+	var to_pos = event.get("to", Vector2.ZERO)
+	var scaled_from = Vector2(from_pos.x * scale.x, from_pos.y * scale.y)
+	var scaled_to = Vector2(to_pos.x * scale.x, to_pos.y * scale.y)
+	last_position_debug = {
+		"type": "pan",
+		"recorded_from": from_pos,
+		"recorded_to": to_pos,
+		"actual_from": scaled_from,
+		"actual_to": scaled_to
+	}
+	position_debug.emit(last_position_debug)
+	print("[REPLAY] Step %d: Pan %s->%s (scaled: %s->%s)" % [index + 1, from_pos, to_pos, scaled_from, scaled_to])
+	await _playback.pan(scaled_from, scaled_to)
+
+func _execute_right_click(event: Dictionary, index: int, scale: Vector2) -> void:
+	var pos = event.get("pos", Vector2.ZERO)
+	var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
+	last_position_debug = {
+		"type": "right_click",
+		"recorded": pos,
+		"actual": scaled_pos
+	}
+	position_debug.emit(last_position_debug)
+	print("[REPLAY] Step %d: Right-click at %s (scaled: %s)" % [index + 1, pos, scaled_pos])
+	await _playback.move_to(scaled_pos)
+	await _playback.right_click()
+
+func _execute_scroll(event: Dictionary, index: int, scale: Vector2) -> void:
+	var direction = event.get("direction", "in")
+	var ctrl = event.get("ctrl", false)
+	var shift = event.get("shift", false)
+	var alt = event.get("alt", false)
+	var factor = event.get("factor", 1.0)
+	var pos = event.get("pos", Vector2.ZERO)
+	var scaled_pos = Vector2(pos.x * scale.x, pos.y * scale.y)
+	last_position_debug = {
+		"type": "scroll",
+		"direction": direction,
+		"ctrl": ctrl,
+		"shift": shift,
+		"alt": alt,
+		"factor": factor,
+		"recorded_pos": pos,
+		"actual_pos": scaled_pos
+	}
+	position_debug.emit(last_position_debug)
+	var mods = ""
+	if ctrl: mods += "Ctrl+"
+	if shift: mods += "Shift+"
+	if alt: mods += "Alt+"
+	print("[REPLAY] Step %d: %sScroll %s at %s (scaled: %s, factor: %.2f)" % [index + 1, mods, direction, pos, scaled_pos, factor])
+	await _playback.scroll(scaled_pos, direction, ctrl, shift, alt, factor)
+
+func _execute_key(event: Dictionary, index: int) -> void:
+	var keycode = event.get("keycode", 0)
+	var mods = ""
+	if event.get("ctrl", false):
+		mods += "Ctrl+"
+	if event.get("shift", false):
+		mods += "Shift+"
+	var key_mouse_pos = event.get("mouse_pos", null)
+	print("[REPLAY] Step %d: Key %s%s" % [index + 1, mods, OS.get_keycode_string(keycode)])
+	await _playback.press_key(keycode, event.get("shift", false), event.get("ctrl", false), key_mouse_pos)
+
+func _execute_wait(event: Dictionary, index: int) -> void:
+	var duration_ms = event.get("duration", 1000)
+	print("[REPLAY] Step %d: Wait %.1fs" % [index + 1, duration_ms / 1000.0])
+	await _playback.wait(duration_ms / 1000.0, false)
+
+func _execute_set_clipboard_image(event: Dictionary, index: int) -> void:
+	var image_path = event.get("path", "")
+	var paste_pos = event.get("mouse_pos", null)
+	print("[REPLAY] Step %d: Set clipboard image: %s" % [index + 1, image_path])
+	await _playback.set_clipboard_image(image_path, paste_pos)
+
+func _execute_screenshot_validation(event: Dictionary, index: int, scale: Vector2) -> void:
+	var screenshot_path = event.get("path", "")
+	var screenshot_region = event.get("region", {})
+	print("[REPLAY] Step %d: Validating screenshot: %s" % [index + 1, screenshot_path.get_file()])
+	print("[REPLAY] Original region: x=%s y=%s w=%s h=%s" % [
+		screenshot_region.get("x", 0), screenshot_region.get("y", 0),
+		screenshot_region.get("w", 0), screenshot_region.get("h", 0)])
+	print("[REPLAY] Scale factor: x=%.3f y=%.3f" % [scale.x, scale.y])
+	if screenshot_path and not screenshot_region.is_empty():
+		var region = Rect2(
+			screenshot_region.get("x", 0) * scale.x,
+			screenshot_region.get("y", 0) * scale.y,
+			screenshot_region.get("w", 0) * scale.x,
+			screenshot_region.get("h", 0) * scale.y
+		)
+		print("[REPLAY] Scaled region: %s" % region)
+		var passed = await _main_runner.validate_screenshot(screenshot_path, region)
+		if not passed:
+			# Store validation failure info for caller to handle
+			event["_validation_failed"] = true
+			event["_baseline_path"] = screenshot_path
+			event["_actual_path"] = _main_runner.last_actual_path
 
 func _validate_legacy_baseline(test_data: Dictionary, scale: Vector2, event_count: int) -> Dictionary:
 	var baseline_path = test_data.get("baseline_path", "")

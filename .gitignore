@@ -21,3 +21,4 @@ mono_crash.*.json
 
 # Claude Code settings (user-specific)
 .claude/
+tmpclaude-*

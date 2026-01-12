@@ -154,14 +154,17 @@ func create_help_content() -> PanelContainer:
 
 	_add_help_topic(help_vbox, "Integration Signals",
 		"Connect to these signals on the UITestRunner autoload to integrate with your app:\n\n" +
-		"ui_test_runner_setup_environment() - Emitted at start of run. Use to go fullscreen, " +
-		"navigate to test board, or configure window size.\n\n" +
-		"ui_test_runner_test_starting(test_name) - Emitted before each test. Use to clear " +
-		"the board, reset zoom, or prepare a clean state.\n\n" +
+		"ui_test_runner_setup_environment() - Emitted at start of run. Use to navigate to test board " +
+		"and configure window size/state. The plugin does NOT auto-maximize - your app controls this.\n\n" +
+		"ui_test_runner_test_starting(test_name, setup_config) - Emitted before each test with:\n" +
+		"  - setup_config.recorded_viewport: Vector2i of viewport size when test was recorded\n" +
+		"  - setup_config.window_mode: Window mode during recording (maximized, windowed, etc.)\n" +
+		"Use to clear the board, reset zoom, or match the recorded viewport size.\n\n" +
 		"ui_test_runner_test_ended(test_name, passed) - Emitted after each test completes. " +
 		"Use for logging or per-test cleanup.\n\n" +
 		"ui_test_runner_run_completed() - Emitted when all tests finish. Use to restore " +
-		"app state, exit fullscreen, or show summary.")
+		"app state or show summary.\n\n" +
+		"If no handlers are connected, a console warning will appear.")
 
 	_add_help_topic(help_vbox, "Settings & Config",
 		"Your preferences (comparison mode, tolerance, playback speed) are saved to " +

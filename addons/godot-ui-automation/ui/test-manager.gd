@@ -1145,15 +1145,26 @@ func _add_result_row_in_run(container: Control, result: Dictionary, run_id: Stri
 	name_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
 	row.add_child(name_label)
 
-	# Rerun button - runs test again (creates new run entry)
-	var rerun_btn = Button.new()
-	rerun_btn.icon = load("res://addons/godot-ui-automation/icons/play.svg")
-	rerun_btn.tooltip_text = Utils.TOOLTIP_RUN_TEST
-	rerun_btn.custom_minimum_size = Vector2(28, 28)
-	rerun_btn.expand_icon = true
-	rerun_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rerun_btn.pressed.connect(_on_rerun_test.bind(test_name, -1))  # -1 means don't update in-place
-	row.add_child(rerun_btn)
+	# For failed tests: show diff button first (leftmost)
+	if not result.get("passed", false) and not is_cancelled:
+		var diff_btn = Button.new()
+		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
+		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
+		diff_btn.custom_minimum_size = Vector2(36, 28)
+		diff_btn.expand_icon = true
+		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		diff_btn.pressed.connect(_on_view_diff.bind(result))
+		row.add_child(diff_btn)
+
+		var failed_step = result.get("failed_step", -1)
+		if failed_step > 0:
+			var step_btn = Button.new()
+			step_btn.text = "Step %d" % failed_step
+			step_btn.tooltip_text = Utils.TOOLTIP_VIEW_FAILED_STEP
+			step_btn.custom_minimum_size = Vector2(60, 28)
+			step_btn.add_theme_font_size_override("font_size", 12)
+			step_btn.pressed.connect(_on_view_failed_step.bind(test_name, failed_step))
+			row.add_child(step_btn)
 
 	# Test Editor button - show for all tests (not cancelled)
 	if not is_cancelled:
@@ -1176,26 +1187,15 @@ func _add_result_row_in_run(container: Control, result: Dictionary, run_id: Stri
 		rerecord_btn.pressed.connect(_on_test_update_baseline.bind(test_name))
 		row.add_child(rerecord_btn)
 
-	# Only show View Diff for failed tests
-	if not result.get("passed", false) and not is_cancelled:
-		var failed_step = result.get("failed_step", -1)
-		if failed_step > 0:
-			var step_btn = Button.new()
-			step_btn.text = "Step %d" % failed_step
-			step_btn.tooltip_text = Utils.TOOLTIP_VIEW_FAILED_STEP
-			step_btn.custom_minimum_size = Vector2(60, 28)
-			step_btn.add_theme_font_size_override("font_size", 12)
-			step_btn.pressed.connect(_on_view_failed_step.bind(test_name, failed_step))
-			row.add_child(step_btn)
-
-		var diff_btn = Button.new()
-		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
-		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
-		diff_btn.custom_minimum_size = Vector2(36, 28)
-		diff_btn.expand_icon = true
-		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		diff_btn.pressed.connect(_on_view_diff.bind(result))
-		row.add_child(diff_btn)
+	# Rerun button - runs test again (rightmost)
+	var rerun_btn = Button.new()
+	rerun_btn.icon = load("res://addons/godot-ui-automation/icons/play.svg")
+	rerun_btn.tooltip_text = Utils.TOOLTIP_RUN_TEST
+	rerun_btn.custom_minimum_size = Vector2(28, 28)
+	rerun_btn.expand_icon = true
+	rerun_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rerun_btn.pressed.connect(_on_rerun_test.bind(test_name, -1))  # -1 means don't update in-place
+	row.add_child(rerun_btn)
 
 func _add_result_row(results_list: Control, result: Dictionary, result_index: int) -> void:
 	var row = HBoxContainer.new()
@@ -1224,18 +1224,26 @@ func _add_result_row(results_list: Control, result: Dictionary, result_index: in
 	name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	row.add_child(name_label)
 
-	# Rerun button - always show
-	var rerun_btn = Button.new()
-	rerun_btn.icon = load("res://addons/godot-ui-automation/icons/play.svg")
-	rerun_btn.tooltip_text = Utils.TOOLTIP_RUN_TEST
-	rerun_btn.custom_minimum_size = Vector2(28, 28)
-	rerun_btn.expand_icon = true
-	rerun_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rerun_btn.pressed.connect(_on_rerun_test.bind(result.name, result_index))
-	row.add_child(rerun_btn)
-
-	# Edit button - show for failed tests to step through and diagnose
+	# For failed tests: show diff button first (leftmost)
 	if not result.passed and not is_cancelled:
+		var diff_btn = Button.new()
+		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
+		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
+		diff_btn.custom_minimum_size = Vector2(36, 28)
+		diff_btn.expand_icon = true
+		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		diff_btn.pressed.connect(_on_view_diff.bind(result))
+		row.add_child(diff_btn)
+
+		if result.failed_step > 0:
+			var step_btn = Button.new()
+			step_btn.text = "Step %d" % result.failed_step
+			step_btn.tooltip_text = Utils.TOOLTIP_VIEW_FAILED_STEP
+			step_btn.custom_minimum_size = Vector2(70, 28)
+			step_btn.pressed.connect(_on_view_failed_step.bind(result.name, result.failed_step))
+			row.add_child(step_btn)
+
+		# Edit button - show for failed tests to step through and diagnose
 		var edit_btn = Button.new()
 		var icon_next_frame = load("res://addons/godot-ui-automation/icons/next-frame.svg")
 		if icon_next_frame:
@@ -1258,24 +1266,15 @@ func _add_result_row(results_list: Control, result: Dictionary, result_index: in
 		rerecord_btn.pressed.connect(_on_test_update_baseline.bind(result.name))
 		row.add_child(rerecord_btn)
 
-	# Only show View Diff for failed tests (not cancelled, not passed)
-	if not result.passed and not is_cancelled:
-		if result.failed_step > 0:
-			var step_btn = Button.new()
-			step_btn.text = "Step %d" % result.failed_step
-			step_btn.tooltip_text = Utils.TOOLTIP_VIEW_FAILED_STEP
-			step_btn.custom_minimum_size = Vector2(70, 28)
-			step_btn.pressed.connect(_on_view_failed_step.bind(result.name, result.failed_step))
-			row.add_child(step_btn)
-
-		var diff_btn = Button.new()
-		diff_btn.icon = load("res://addons/godot-ui-automation/icons/branch_compare.svg")
-		diff_btn.tooltip_text = Utils.TOOLTIP_COMPARE_SCREENSHOTS
-		diff_btn.custom_minimum_size = Vector2(36, 28)
-		diff_btn.expand_icon = true
-		diff_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		diff_btn.pressed.connect(_on_view_diff.bind(result))
-		row.add_child(diff_btn)
+	# Rerun button - always show (rightmost)
+	var rerun_btn = Button.new()
+	rerun_btn.icon = load("res://addons/godot-ui-automation/icons/play.svg")
+	rerun_btn.tooltip_text = Utils.TOOLTIP_RUN_TEST
+	rerun_btn.custom_minimum_size = Vector2(28, 28)
+	rerun_btn.expand_icon = true
+	rerun_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rerun_btn.pressed.connect(_on_rerun_test.bind(result.name, result_index))
+	row.add_child(rerun_btn)
 
 # Signal handlers
 func _on_record_new() -> void:
@@ -1920,20 +1919,9 @@ func _close_env_dialog() -> void:
 	_env_test_checkboxes.clear()
 
 # Check tests and show dialog if needed, returns true if dialog shown
+# DISABLED: Viewport mismatch warnings now appear in test results instead of pre-test dialog
 func _check_and_show_env_dialog(test_names: Array, run_mode: String, category_name: String = "") -> bool:
-	var env_result = _check_tests_environment(test_names)
-
-	if not env_result.has_mismatches:
-		return false  # No dialog needed, proceed with run
-
-	# Store pending run info
-	_pending_run_tests = test_names.duplicate()
-	_pending_run_mode = run_mode
-	_pending_category_name = category_name
-
-	# Show dialog
-	_show_env_mismatch_dialog(env_result)
-	return true  # Dialog shown, run will happen from dialog callback
+	return false  # Never show pre-test dialog, mismatch is reported in test results
 
 # =============================================================================
 # DRAG AND DROP

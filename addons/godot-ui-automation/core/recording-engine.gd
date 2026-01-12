@@ -47,9 +47,6 @@ var mouse_down_shift: bool = false
 var middle_mouse_down_pos: Vector2 = Vector2.ZERO
 var middle_mouse_is_down: bool = false
 
-# Window state tracking for auto-maximize
-var _was_maximized_before_recording: bool = true
-
 # UI elements (created internally)
 var _recording_indicator: Control = null
 var _recording_panel: Panel = null  # Main panel container
@@ -100,14 +97,7 @@ func start_recording() -> void:
 	_clear_recording_steps_ui()  # Clear live steps UI
 	record_start_time = Time.get_ticks_msec()
 	mouse_is_down = false
-	# Auto-maximize window if setting enabled (skip if already maximized or fullscreen)
-	if ScreenshotValidator.auto_maximize_recording:
-		var window = _tree.root
-		if window.mode != Window.MODE_MAXIMIZED and window.mode != Window.MODE_FULLSCREEN:
-			_was_maximized_before_recording = false
-			window.mode = Window.MODE_MAXIMIZED
-		else:
-			_was_maximized_before_recording = true
+	# Window configuration is now the app's responsibility via ui_test_runner_setup_environment signal
 	_show_recording_indicator()
 	recording_started.emit()
 
@@ -405,17 +395,20 @@ func _update_button_visibility() -> void:
 	_update_hud_width()
 
 func _update_hud_width() -> void:
-	# Panel width is now fixed - handled by _update_recording_panel_height()
-	pass
+	# Update panel width based on visible buttons
+	_update_recording_panel_height()
 
 func _update_recording_panel_height() -> void:
 	if not _recording_panel:
 		return
 
 	if _recording_collapsed:
-		# Collapsed: header only
+		# Collapsed: header only - adjust width if clipboard button is visible
 		_recording_panel.offset_top = -70
-		_recording_panel.offset_left = -436
+		var base_width = -436
+		if _btn_clipboard and _btn_clipboard.visible:
+			base_width -= 50  # Extra space for clipboard button
+		_recording_panel.offset_left = base_width
 	else:
 		# Expanded: header + body with steps (matches Playback UI size)
 		_recording_panel.offset_top = -580

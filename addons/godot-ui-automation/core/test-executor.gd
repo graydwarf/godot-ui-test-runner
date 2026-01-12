@@ -430,19 +430,13 @@ func _run_replay_internal(test_data: Dictionary, recorded_events: Array[Dictiona
 
 	await begin_test(display_name)
 
-	# Store original window state
-	var original_window = _store_window_state()
+	# Window configuration is now the app's responsibility via ui_test_runner_test_starting signal
+	# The plugin no longer manipulates window state - apps handle this in their signal handler
+	# Viewport mismatch is detected after test and reported as a warning in results
 
-	# Execute setup actions (e.g., maximize window) BEFORE environment check
-	var setup_handled_window = await _execute_setup(test_data)
-
-	# Restore recorded window state (for legacy tests without setup section)
-	# Skip if setup already handled window mode to avoid flicker
-	if not setup_handled_window:
-		await _restore_recorded_window(test_data.get("recorded_window", {}))
-
-	# Calculate viewport scaling
+	# Calculate viewport scaling and check for mismatch
 	var scale = _calculate_viewport_scale(test_data)
+	var viewport_mismatch = _check_viewport_mismatch(test_data)
 
 	var passed = true
 	var baseline_path = ""
@@ -566,10 +560,7 @@ func _run_replay_internal(test_data: Dictionary, recorded_events: Array[Dictiona
 	else:
 		print("[TestExecutor] Replay complete - ", "PASSED" if passed else "FAILED")
 
-	# Window restoration disabled - keep app in fullscreen/maximized state
-	# await _restore_window_state(original_window, not test_data.get("recorded_window", {}).is_empty())
-
-	return {
+	var result = {
 		"name": result_name,
 		"passed": passed,
 		"cancelled": was_cancelled,
@@ -578,54 +569,29 @@ func _run_replay_internal(test_data: Dictionary, recorded_events: Array[Dictiona
 		"failed_step": failed_step_index
 	}
 
-func _store_window_state() -> Dictionary:
-	return {
-		"mode": DisplayServer.window_get_mode(),
-		"pos": DisplayServer.window_get_position(),
-		"size": DisplayServer.window_get_size()
-	}
+	# Add viewport mismatch warning if applicable
+	if not viewport_mismatch.is_empty():
+		result["viewport_warning"] = viewport_mismatch
+		print("[TestExecutor] ⚠️  Viewport mismatch: %s" % viewport_mismatch)
 
-func _restore_recorded_window(recorded_window: Dictionary) -> void:
-	if recorded_window.is_empty():
-		return
+	return result
 
-	var target_mode = recorded_window.get("mode", DisplayServer.WINDOW_MODE_WINDOWED)
+# Check if current viewport matches recorded viewport
+# Returns empty string if match, or warning message if mismatch
+func _check_viewport_mismatch(test_data: Dictionary) -> String:
+	var recorded_viewport_data = test_data.get("recorded_viewport", {})
+	if recorded_viewport_data.is_empty():
+		return ""  # No recorded viewport info (legacy test)
 
-	if target_mode == DisplayServer.WINDOW_MODE_WINDOWED:
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			await _tree.process_frame
+	var current_viewport = _main_runner.get_viewport().get_visible_rect().size
+	var recorded_w = recorded_viewport_data.get("w", current_viewport.x)
+	var recorded_h = recorded_viewport_data.get("h", current_viewport.y)
 
-		var target_size = Vector2i(recorded_window.get("w", 1280), recorded_window.get("h", 720))
-		DisplayServer.window_set_size(target_size)
-		# Don't change window position - coordinates are viewport-relative
-		print("[TestExecutor] Restored window: windowed %dx%d" % [target_size.x, target_size.y])
-	elif target_mode == DisplayServer.WINDOW_MODE_MAXIMIZED:
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_MAXIMIZED:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
-			print("[TestExecutor] Restored window: maximized")
-		else:
-			print("[TestExecutor] Window already maximized, skipping restore")
-	elif target_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-		print("[TestExecutor] Restored window: fullscreen")
+	# Allow small tolerance (a few pixels) for rounding differences
+	if abs(current_viewport.x - recorded_w) > 5 or abs(current_viewport.y - recorded_h) > 5:
+		return "Expected %dx%d, got %dx%d" % [recorded_w, recorded_h, int(current_viewport.x), int(current_viewport.y)]
 
-	await _tree.process_frame
-	await _tree.process_frame
-
-func _restore_window_state(original: Dictionary, was_changed: bool) -> void:
-	if not was_changed:
-		return
-
-	if original.mode == DisplayServer.WINDOW_MODE_WINDOWED:
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			await _tree.process_frame
-		DisplayServer.window_set_size(original.size)
-		# Don't restore position - we never changed it
-	else:
-		DisplayServer.window_set_mode(original.mode)
-	print("[TestExecutor] Restored original window state")
+	return ""
 
 func _calculate_viewport_scale(test_data: Dictionary) -> Vector2:
 	var current_viewport = _main_runner.get_viewport().get_visible_rect().size
@@ -714,25 +680,14 @@ func _check_environment_match(test_data: Dictionary) -> Dictionary:
 	}
 
 # Execute setup actions before test playback
+# Note: Window configuration is now the app's responsibility via ui_test_runner_test_starting signal
+# The maximize_window flag is ignored - apps should handle window state in their signal handler
 func _execute_setup(test_data: Dictionary) -> bool:
 	var setup = test_data.get("setup", {})
-	var handled_window = false
 	if setup.is_empty():
-		return handled_window
-
-	print("[TestExecutor] Executing setup actions...")
-
-	if setup.get("maximize_window", false):
-		handled_window = true
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_MAXIMIZED:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
-			print("[TestExecutor] Setup: Maximized window")
-			await _tree.process_frame
-			await _tree.process_frame
-		else:
-			print("[TestExecutor] Setup: Window already maximized")
-
-	return handled_window
+		return false
+	# Setup config is passed to app via signal, plugin no longer manipulates window directly
+	return false
 
 func _execute_event(event: Dictionary, index: int, scale: Vector2) -> void:
 	var event_type = event.get("type", "")

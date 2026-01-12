@@ -39,11 +39,61 @@ signal test_mode_changed(active: bool)
 # App-facing signals for test automation setup/cleanup
 # Apps can connect to these to configure their environment for testing
 signal ui_test_runner_setup_environment()  # Emitted at start of test run (go fullscreen, navigate to test board)
-signal ui_test_runner_test_starting(test_name: String)  # Emitted before each test (app can cleanup)
+signal ui_test_runner_test_starting(test_name: String, setup_config: Dictionary)  # Emitted before each test with recorded viewport info
 signal ui_test_runner_test_ended(test_name: String, passed: bool)  # Emitted after each test
 signal ui_test_runner_run_completed()  # Emitted when all tests complete (but session may continue)
 signal ui_test_runner_session_ended()  # Emitted when Test Manager closes after running tests (restore window state)
 signal ui_test_runner_recording_started()  # Emitted when recording starts (app can maximize window, etc.)
+
+# Track if we've already warned about missing handlers this session
+var _warned_missing_handlers: bool = false
+
+# Check if app has connected handlers to the integration signals
+# Returns array of warning messages for missing handlers
+func _check_signal_handlers() -> Array[String]:
+	var warnings: Array[String] = []
+
+	if ui_test_runner_setup_environment.get_connections().is_empty():
+		warnings.append("No handler for ui_test_runner_setup_environment - app won't configure test environment")
+
+	if ui_test_runner_test_starting.get_connections().is_empty():
+		warnings.append("No handler for ui_test_runner_test_starting - app won't reset state between tests")
+
+	return warnings
+
+# Print handler warnings once per session (non-blocking, console only)
+func _warn_missing_handlers() -> void:
+	if _warned_missing_handlers:
+		return
+
+	var warnings = _check_signal_handlers()
+	if warnings.is_empty():
+		return
+
+	_warned_missing_handlers = true
+	print("[UITestRunner] ⚠️  Missing signal handlers:")
+	for warning in warnings:
+		print("[UITestRunner]   - %s" % warning)
+	print("[UITestRunner] Connect to these signals to configure window state and test environment.")
+
+# Get setup config for a test (for passing to ui_test_runner_test_starting signal)
+# Returns dictionary with recorded_viewport and window_mode info
+func _get_test_setup_config(test_name: String) -> Dictionary:
+	var filepath = TESTS_DIR + "/" + test_name + ".json"
+	var test_data = FileIO.load_test(filepath)
+	if test_data.is_empty():
+		return {}
+
+	var setup = test_data.get("setup", {})
+	var recorded_viewport = test_data.get("recorded_viewport", {})
+
+	return {
+		"recorded_viewport": Vector2i(
+			recorded_viewport.get("w", 1920),
+			recorded_viewport.get("h", 1080)
+		),
+		"window_mode": setup.get("window_mode", "unknown")
+	}
 
 # Test mode flag - when true, board should disable auto-panning
 var test_mode_active: bool = false:
@@ -364,7 +414,7 @@ func _on_executor_test_started(test_name: String):
 			_step_mode_test_passed = false
 			_set_test_editor_hud_border_color(Color(1.0, 1.0, 1.0, 1.0))  # White/neutral
 			# Emit signal to trigger board cleanup (same as Reset Test button)
-			ui_test_runner_test_starting.emit(test_name)
+			ui_test_runner_test_starting.emit(test_name, _get_test_setup_config(test_name))
 		elif not is_restart:
 			# Also reset on new test (not from recording, not restart)
 			_auto_play_steps.clear()
@@ -586,9 +636,10 @@ func _on_rerun_test_from_results(test_name: String, result_index: int):
 	# Show warning overlay BEFORE environment setup to prevent window resize during warning
 	if await _show_startup_warning_and_wait():
 		return
+	_warn_missing_handlers()
 	ui_test_runner_setup_environment.emit()
 	await get_tree().create_timer(0.5).timeout
-	ui_test_runner_test_starting.emit(test_name)
+	ui_test_runner_test_starting.emit(test_name, _get_test_setup_config(test_name))
 	await get_tree().create_timer(0.3).timeout
 	var result = await _run_test_and_get_result(test_name)
 	# Create a single-test run for history
@@ -1586,11 +1637,12 @@ func _run_test_from_file(test_name: String, skip_setup_delays: bool = false):
 		print("[UITestRunner] Normal mode - showing warning overlay")
 		if await _show_startup_warning_and_wait():
 			return
+		_warn_missing_handlers()
 		ui_test_runner_setup_environment.emit()
 		await get_tree().create_timer(0.5).timeout
 
 		# Emit test starting signal so app can cleanup before test
-		ui_test_runner_test_starting.emit(test_name)
+		ui_test_runner_test_starting.emit(test_name, _get_test_setup_config(test_name))
 		await get_tree().create_timer(0.3).timeout
 
 	# Run test and wait for result
@@ -1791,12 +1843,14 @@ func _on_record_new_test():
 
 	# Emit setup signal so app can configure environment (window size, navigate to test board)
 	_test_session_active = true
+	_warn_missing_handlers()
 	ui_test_runner_setup_environment.emit()
 	# Wait for environment setup to complete (window resize, board navigation)
 	await get_tree().create_timer(0.5).timeout
 
 	# Emit test starting signal so app can cleanup before recording
-	ui_test_runner_test_starting.emit("Recording")
+	# Empty setup config since this is a new recording (no prior test data)
+	ui_test_runner_test_starting.emit("Recording", {})
 	# Wait for cleanup to complete (clear board, reset zoom, board fully loaded)
 	await get_tree().create_timer(0.5).timeout
 
@@ -2088,12 +2142,13 @@ func _on_update_baseline(test_name: String):
 
 	# Emit setup signal so app can configure environment (window size, navigate to test board)
 	_test_session_active = true
+	_warn_missing_handlers()
 	ui_test_runner_setup_environment.emit()
 	# Wait for environment setup to complete (window resize, board navigation)
 	await get_tree().create_timer(0.5).timeout
 
 	# Emit test starting signal so app can cleanup before recording
-	ui_test_runner_test_starting.emit(test_name)
+	ui_test_runner_test_starting.emit(test_name, _get_test_setup_config(test_name))
 	# Wait for cleanup to complete (clear board, reset zoom, board fully loaded)
 	await get_tree().create_timer(0.5).timeout
 
@@ -3410,30 +3465,55 @@ func _reset_step_highlights():
 
 # Apply failed step highlighting (called from "Step X" button)
 # Shows which steps passed before the failure and highlights the failed step in red
+# Note: failed_step is 1-based (from UI display), convert to 0-based index
 func _apply_failed_step_highlight(failed_step: int):
+	# Convert from 1-based (UI display) to 0-based (array index)
+	var step_index = failed_step - 1
+	if step_index < 0:
+		return
+
+	# Expand the Test Editor HUD if collapsed (so user can see the steps)
+	if _test_editor_hud_collapsed:
+		_test_editor_hud_collapsed = false
+		if _test_editor_hud_body_container:
+			_test_editor_hud_body_container.visible = true
+		if _test_editor_hud_details_btn:
+			_test_editor_hud_details_btn.text = "▼ Details"
+		_update_test_editor_hud_panel_height()
+
+	# Populate steps if not already done
+	if _test_editor_hud_step_rows.is_empty() and _test_editor_hud_current_events.size() > 0:
+		_populate_test_editor_hud_steps()
+
 	if _test_editor_hud_step_rows.is_empty():
 		# Steps not populated yet, wait a frame and retry
 		get_tree().create_timer(0.1).timeout.connect(_apply_failed_step_highlight.bind(failed_step))
 		return
 
-	# Mark steps 0 to failed_step-1 as passed (green)
+	# Mark steps 0 to step_index-1 as passed (green)
 	_passed_step_indices.clear()
-	for i in range(failed_step):
+	for i in range(step_index):
 		_passed_step_indices.append(i)
 
 	# Mark the failed step
-	_failed_step_index = failed_step
+	_failed_step_index = step_index
 
 	# Set red border to indicate failure state
 	_set_test_editor_hud_border_color(Color(0.95, 0.3, 0.3, 1.0))
 
-	# Apply visual highlighting to all steps
-	_highlight_test_editor_hud_step(failed_step)
+	# Apply red styling to the failed step row
+	_highlight_failed_step(step_index)
 
-	# Scroll to the failed step
-	if _test_editor_hud_steps_scroll and failed_step < _test_editor_hud_step_rows.size():
-		var row = _test_editor_hud_step_rows[failed_step]
-		_test_editor_hud_steps_scroll.call_deferred("ensure_control_visible", row)
+	# Apply visual highlighting to all other steps (passed = green, pending = default)
+	_highlight_test_editor_hud_step(step_index)
+
+	# Scroll to the failed step (wait for UI to fully render)
+	if _test_editor_hud_steps_scroll and step_index < _test_editor_hud_step_rows.size():
+		var row = _test_editor_hud_step_rows[step_index]
+		# Wait two frames for layout to complete before scrolling
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_test_editor_hud_steps_scroll.ensure_control_visible(row)
 
 # Highlight a step with red border to indicate failure
 # Optionally stores baseline_path and actual_path for screenshot diff viewing
@@ -3489,7 +3569,7 @@ func _handle_hud_button_click(pos: Vector2) -> bool:
 	elif _test_editor_hud_restart_btn and _test_editor_hud_restart_btn.visible:
 		if _test_editor_hud_restart_btn.get_global_rect().has_point(pos):
 			if _executor and _executor.is_running:
-				ui_test_runner_test_starting.emit(current_test_name)
+				ui_test_runner_test_starting.emit(current_test_name, _get_test_setup_config(current_test_name))
 				_executor.restart_from_beginning()
 				_highlight_test_editor_hud_step(0)
 			handled = true
@@ -3748,7 +3828,7 @@ func _on_test_editor_hud_restart():
 			panel.add_theme_stylebox_override("panel", style)
 
 	# Emit signal to trigger board cleanup (same as test start)
-	ui_test_runner_test_starting.emit(current_test_name)
+	ui_test_runner_test_starting.emit(current_test_name, _get_test_setup_config(current_test_name))
 
 	# Reset step label to show step 1
 	if _test_editor_hud_step_label:
@@ -3805,6 +3885,7 @@ func _on_test_editor_hud_rerecord():
 
 	# Start recording - when done, we'll return to Test Editor dialog
 	_test_session_active = true
+	_warn_missing_handlers()
 	ui_test_runner_setup_environment.emit()
 	ui_test_runner_recording_started.emit()
 	_recording.start_recording()
@@ -3829,12 +3910,18 @@ func _on_view_failed_step(test_name: String, failed_step: int):
 	# Store the failed step to highlight after HUD appears
 	_pending_failed_step_highlight = failed_step
 
+	# Load test data to get display name for the title
+	var filepath = TESTS_DIR + "/" + test_name + ".json"
+	var test_data = _load_test(filepath)
+	if not test_data.is_empty():
+		pending_test_name = _get_display_name(test_data, test_name)
+
 	# Use same flow as "Test Editor" button from Results tab
 	_reset_step_highlights()
 	_close_test_selector(true)
 	_executor.set_step_mode(true)
 	_debug_from_results = true
-	_run_test_from_file(test_name)
+	_run_test_from_file(test_name, true)  # Skip countdown - just open Test Editor
 
 func _view_failed_test_diff(result: Dictionary):
 	last_baseline_path = result.baseline_path
@@ -4199,6 +4286,7 @@ func _show_startup_warning_and_wait() -> bool:
 func _run_batch_tests(tests: Array) -> void:
 	if await _show_startup_warning_and_wait():
 		return
+	_warn_missing_handlers()
 	ui_test_runner_setup_environment.emit()
 	await get_tree().create_timer(0.5).timeout
 
@@ -4213,7 +4301,7 @@ func _run_batch_tests(tests: Array) -> void:
 			break
 
 		print("[UITestRunner] --- Running: %s ---" % test_name)
-		ui_test_runner_test_starting.emit(test_name)
+		ui_test_runner_test_starting.emit(test_name, _get_test_setup_config(test_name))
 		await get_tree().create_timer(0.3).timeout
 
 		var result = await _run_test_and_get_result(test_name)

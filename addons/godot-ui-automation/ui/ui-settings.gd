@@ -315,14 +315,6 @@ func _create_recording_options_section() -> void:
 	clipboard_check.toggled.connect(_on_clipboard_toggle)
 	vbox.add_child(clipboard_check)
 
-	var maximize_check = CheckBox.new()
-	maximize_check.name = "MaximizeCheck"
-	maximize_check.text = "Auto-maximize window when recording"
-	maximize_check.add_theme_font_size_override("font_size", 16)
-	maximize_check.button_pressed = ScreenshotValidator.auto_maximize_recording
-	maximize_check.toggled.connect(_on_maximize_toggle)
-	vbox.add_child(maximize_check)
-
 	var warnings_check = CheckBox.new()
 	warnings_check.name = "WarningsCheck"
 	warnings_check.text = "Show viewport mismatch warnings"
@@ -424,10 +416,6 @@ func _on_clipboard_toggle(pressed: bool) -> void:
 	settings_changed.emit()
 	if _button_visibility_callback.is_valid():
 		_button_visibility_callback.call()
-
-func _on_maximize_toggle(pressed: bool) -> void:
-	ScreenshotValidator.auto_maximize_recording = pressed
-	ScreenshotValidator.save_config()
 
 func _on_warnings_toggle(pressed: bool) -> void:
 	ScreenshotValidator.show_viewport_warnings = pressed

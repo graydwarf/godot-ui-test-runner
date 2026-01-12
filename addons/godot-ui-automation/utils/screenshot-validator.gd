@@ -34,7 +34,6 @@ static var enable_last_step_capture: bool = true  # Auto-capture screenshot on l
 
 # Recording behavior settings
 static var default_click_delay: int = 350  # Minimum ms between back-to-back clicks
-static var auto_maximize_recording: bool = true  # Maximize window when recording starts
 static var show_viewport_warnings: bool = true  # Show viewport mismatch warnings before tests
 
 # Playback behavior settings
@@ -73,7 +72,6 @@ static func save_config() -> void:
 	config.set_value("recording", "show_capture_button", show_capture_button)
 	config.set_value("recording", "enable_last_step_capture", enable_last_step_capture)
 	config.set_value("recording", "default_click_delay", default_click_delay)
-	config.set_value("recording", "auto_maximize_recording", auto_maximize_recording)
 	config.set_value("recording", "show_viewport_warnings", show_viewport_warnings)
 	config.set_value("playback", "startup_delay", startup_delay)
 	var err = config.save(CONFIG_PATH)
@@ -102,7 +100,6 @@ static func load_config() -> void:
 	show_capture_button = config.get_value("recording", "show_capture_button", true)
 	enable_last_step_capture = config.get_value("recording", "enable_last_step_capture", true)
 	default_click_delay = config.get_value("recording", "default_click_delay", 350)
-	auto_maximize_recording = config.get_value("recording", "auto_maximize_recording", true)
 	show_viewport_warnings = config.get_value("recording", "show_viewport_warnings", true)
 	startup_delay = config.get_value("playback", "startup_delay", 3000)
 	print("[UITestRunner] Config loaded from %s - Speed: %d, Mode: %s, ClickDelay: %dms, StartupDelay: %dms" % [
